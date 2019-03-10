@@ -411,7 +411,11 @@ function write_standings_table_rows(&$standings) {
       echo "<td>".ordinal($row['best'])."</td>";
       echo "<td>".ordinal($row['worst'])."</td>";
     } else {
-      echo "<td>".sprintf($time_format, $row['avg'])."</td>";
+      $r = 3;
+      if ($time_format == "%6.4f") {
+        $r = 4;
+      }
+      echo "<td>".sprintf($time_format, round($row['avg'],$r))."</td>";
       echo "<td>".sprintf($time_format, $row['best'])."</td>";
       echo "<td>".sprintf($time_format, $row['worst'])."</td>";
     }
