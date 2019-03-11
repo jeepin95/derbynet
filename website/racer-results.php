@@ -168,8 +168,8 @@ foreach ($rounds as $round) {
         if (isset($rs['carphoto']) && $rs['carphoto'] && $show_car_photos) {
           $racer_label .= '<img src="'.car_photo_repository()->url_for_racer($rs, '68h').'" style="float: left;"/>';
         }
-        $racer_label .= '<div class="racer_label"><span class="racer">'
-          .htmlspecialchars(mangled_name($rs, $name_style), ENT_QUOTES, 'UTF-8').'</span>'
+        $racer_label .= '<div class="racer_label"><span class="racer"><a class="racer_link" href="racer-results.php?racerid='.$rs['racerid'].'">'
+          .htmlspecialchars(mangled_name($rs, $name_style), ENT_QUOTES, 'UTF-8').'</a></span>'
       .' (<span class="car">'.$rs['carnumber'].'</span>)</div>';
         $racer_cells = array();
         for ($i = 1; $i <= $nlanes; ++$i) {
