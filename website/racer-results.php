@@ -166,7 +166,7 @@ foreach ($rounds as $round) {
           $racer_label .= '<img src="'.headshots()->url_for_racer($rs, '68h').'" style="float: left;"/>';
         }
         if (isset($rs['carphoto']) && $rs['carphoto'] && $show_car_photos) {
-          $racer_label .= '<img src="'.car_photo_repository()->url_for_racer($rs, '68h').'" style="float: left;"/>';
+          $racer_label .= '<a target="_blank" href="'.car_photo_repository()->url_for_racer($rs,'').'"><img src="'.car_photo_repository()->url_for_racer($rs, '68h').'" style="float: left;"/></a>';
         }
         $racer_label .= '<div class="racer_label"><span class="racer"><a class="racer_link" href="racer-results.php?racerid='.$rs['racerid'].'">'
           .htmlspecialchars(mangled_name($rs, $name_style), ENT_QUOTES, 'UTF-8').'</a></span>'
