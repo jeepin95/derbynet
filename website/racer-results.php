@@ -132,73 +132,74 @@ foreach ($rounds as $round) {
   $roundid = $round['roundid'];
   $classid = $round['classid'];
   $groupid = $round['groupid'];
+  if($rs['roundid'] == $roundid) {
+    $is_current = 0;
+    if ($now_running['roundid'] == $roundid and
+        $now_running['classid'] == $classid)
+      $is_current = 1;
 
-  $is_current = 0;
-  if ($now_running['roundid'] == $roundid and
-      $now_running['classid'] == $classid)
-    $is_current = 1;
+    echo '<tbody id="tbody_'.$groupid.'">'."\n";
+    echo '<tr><th/><th class="group_spacer wide" colspan="'.$nlanes.'"/></tr>'."\n";
+    echo '<tr><th class="pre_group_title"/>'
+        .'<th class="group_title wide" colspan="'.$nlanes.'">'
+            .htmlspecialchars($round['class'], ENT_QUOTES, 'UTF-8').', Round '.$round['round'].'</th>'
+        .'</tr>'."\n";
 
-  echo '<tbody id="tbody_'.$groupid.'">'."\n";
-  echo '<tr><th/><th class="group_spacer wide" colspan="'.$nlanes.'"/></tr>'."\n";
-  echo '<tr><th class="pre_group_title"/>'
-      .'<th class="group_title wide" colspan="'.$nlanes.'">'
-          .htmlspecialchars($round['class'], ENT_QUOTES, 'UTF-8').', Round '.$round['round'].'</th>'
-      .'</tr>'."\n";
+    echo '<tr>';
+    echo '<th>Racer</th>';
+    for ($l = 1; $l <= $nlanes; ++$l)
+      echo '<th>Lane '.$l.'</th>';
+    echo '</tr>'."\n";
 
-  echo '<tr>';
-  echo '<th>Racer</th>';
-  for ($l = 1; $l <= $nlanes; ++$l)
-    echo '<th>Lane '.$l.'</th>';
-  echo '</tr>'."\n";
+    $row = 1;
+    $racerid = 0;
+    $racer_label = '';
+    while ($rs and $rs['roundid'] == $roundid) {
+      if ($racerid <> $rs['racerid']) {
+        if ($racer_label) {
+      write_rr($racer_label, $racer_cells, $nrows);
+        }
+        $racerid = $rs['racerid'];
+        $racer_label = '';
+        // 68h images completely fill one row's height
+        if ($rs['imagefile'] && $show_racer_photos) {
+          $racer_label .= '<img src="'.headshots()->url_for_racer($rs, '68h').'" style="float: left;"/>';
+        }
+        if (isset($rs['carphoto']) && $rs['carphoto'] && $show_car_photos) {
+          $racer_label .= '<img src="'.car_photo_repository()->url_for_racer($rs, '68h').'" style="float: left;"/>';
+        }
+        $racer_label .= '<div class="racer_label"><span class="racer">'
+          .htmlspecialchars(mangled_name($rs, $name_style), ENT_QUOTES, 'UTF-8').'</span>'
+      .' (<span class="car">'.$rs['carnumber'].'</span>)</div>';
+        $racer_cells = array();
+        for ($i = 1; $i <= $nlanes; ++$i) {
+      $racer_cells[] = array();
+        }
+        //++$row;
+        $lane = 1;
+        $nrows = 1;
+      }
 
-  $row = 1;
-  $racerid = 0;
-  $racer_label = '';
-  while ($rs and $rs['roundid'] == $roundid) {
-    if ($racerid <> $rs['racerid']) {
-      if ($racer_label) {
-		write_rr($racer_label, $racer_cells, $nrows);
+      $lane = $rs['lane'];
+
+      $ft = $use_points ? (isset($rs['finishplace']) ? ordinal($rs['finishplace']) : '--')
+                        : (isset($rs['finishtime']) ? sprintf($time_format, $rs['finishtime']) : '--');
+
+      $racer_cells[$lane - 1][] = '<td class="resultid_'.$rs['resultid'].'">'
+                  .'<a class="heat_link" href="ondeck.php#heat_'.$roundid.'_'.$rs['heat'].'">'
+                  .'<span class="time">'.$ft.'</span>'
+                  .'</a>'
+                  .'</td>'."\n";
+      if (count($racer_cells[$lane - 1]) > $nrows) {
+        $nrows = count($racer_cells[$lane - 1]);
       }
-      $racerid = $rs['racerid'];
-      $racer_label = '';
-      // 68h images completely fill one row's height
-      if ($rs['imagefile'] && $show_racer_photos) {
-        $racer_label .= '<img src="'.headshots()->url_for_racer($rs, '68h').'" style="float: left;"/>';
-      }
-      if (isset($rs['carphoto']) && $rs['carphoto'] && $show_car_photos) {
-        $racer_label .= '<img src="'.car_photo_repository()->url_for_racer($rs, '68h').'" style="float: left;"/>';
-      }
-      $racer_label .= '<div class="racer_label"><span class="racer">'
-        .htmlspecialchars(mangled_name($rs, $name_style), ENT_QUOTES, 'UTF-8').'</span>'
-		.' (<span class="car">'.$rs['carnumber'].'</span>)</div>';
-      $racer_cells = array();
-      for ($i = 1; $i <= $nlanes; ++$i) {
-		$racer_cells[] = array();
-      }
-      //++$row;
-      $lane = 1;
-      $nrows = 1;
+      ++$lane;
+      $rs = $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    $lane = $rs['lane'];
-
-    $ft = $use_points ? (isset($rs['finishplace']) ? ordinal($rs['finishplace']) : '--')
-                      : (isset($rs['finishtime']) ? sprintf($time_format, $rs['finishtime']) : '--');
-
-    $racer_cells[$lane - 1][] = '<td class="resultid_'.$rs['resultid'].'">'
-                 .'<a class="heat_link" href="ondeck.php#heat_'.$roundid.'_'.$rs['heat'].'">'
-                 .'<span class="time">'.$ft.'</span>'
-                 .'</a>'
-                 .'</td>'."\n";
-    if (count($racer_cells[$lane - 1]) > $nrows) {
-      $nrows = count($racer_cells[$lane - 1]);
+    if ($racer_label) {
+      write_rr($racer_label, $racer_cells, $nrows);
     }
-    ++$lane;
-    $rs = $stmt->fetch(PDO::FETCH_ASSOC);
-  }
-
-  if ($racer_label) {
-    write_rr($racer_label, $racer_cells, $nrows);
   }
   echo '</tbody>'."\n";
 }
