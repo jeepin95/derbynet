@@ -31,6 +31,20 @@ function dbnow_expr() {
   }
 }
 
+// Returns an expression suitable for comparing with 'completed' in RaceChart
+// $expr is an SQL expression that produces a value like '2013-11-14 14:57:14'
+// (PHP format 'Y-m-d H:i:s')
+function db_compare_completed($expr) {
+  global $dbtype;
+  if ($dbtype == 'sqlite') {
+    return "datetime($expr)";
+  } else if ($dbtype == 'mysql') {
+    return "timestamp($expr)";
+  } else if ($dbtype == 'access') {
+    return "CDate($expr)";
+  }
+}
+
 // inner_join('Classes', 'Rounds', on, 'Roster', on, ...)
 function inner_join() {
   global $dbtype;
@@ -228,9 +242,16 @@ function get_running_round() {
 // Prix Race Manager, but GPRM is actually running the race.
 //
 // By default, if using an Access (ODBC) database, we assume we're running with GPRM.
-function with_gprm() {
+function warn_no_timer() {
   global $dbtype;
-  return read_raceinfo('with-gprm', $dbtype == 'access');
+  $count = read_single_value('SELECT COUNT(*) FROM RaceInfo WHERE itemkey = :key',
+                             array(':key' => 'warn-no-timer'));
+  if ($count > 0) {
+    return read_raceinfo('warn-no-timer', true);
+  } else {
+    // This used to be stored as 'with-gprm', with the opposite sense
+    return ! read_raceinfo('with-gprm', $dbtype == 'access');
+  }
 }
 
 function is_windows_server() {

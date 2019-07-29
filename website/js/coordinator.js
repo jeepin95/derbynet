@@ -204,13 +204,13 @@ function mark_clicked(submit_js) {
                 // and then handle_schedule_submit
 }
 
-function handle_schedule_submit(roundid, rounds, then_race) {
+function handle_schedule_submit(roundid, n_times_per_lane, then_race) {
     close_modal("#schedule_modal");
     $.ajax(g_action_url,
            {type: 'POST',
             data: {action: 'schedule.generate',
                    roundid: roundid,
-                   nrounds: rounds},
+                   n_times_per_lane: n_times_per_lane},
             success: function(data) {
               process_coordinator_poll_response(data);
               if (then_race && data.getElementsByTagName('success').length > 0) {
@@ -278,6 +278,28 @@ function handle_make_changes_button(roundid) {
                    now_racing: 0},
             success: function(data) { process_coordinator_poll_response(data); }
            });
+}
+
+function handle_purge_button(roundid, heats_run) {
+  let control_group = $("div[data-roundid=\"" + roundid + "\"]");
+  $("#purge_round_name").text(control_group.find(".roundclass").text());
+  $("#purge_round_no").text(control_group.find(".roundno").text());
+  $("#purge_results_count").text(heats_run);
+  show_modal("#purge_modal", function(event) {
+    close_modal("#purge_modal");
+    show_secondary_modal("#purge_confirmation_modal", function(event) {
+      close_secondary_modal("#purge_confirmation_modal");
+      $.ajax('action.php',
+           {type: 'POST',
+            data: {action: 'database.purge',
+                   purge: 'results',
+                   roundid: roundid},
+            success: function(data) { coordinator_poll(); }
+           });
+      return false;
+    });
+    return false;
+  });
 }
 
 function show_choose_new_round_modal() {
@@ -551,7 +573,7 @@ function generate_scheduling_control_group(round, current, timer_state) {
   }
 
   control_group.append('<div class="roundno">' + round.round + '</div>');
-  control_group.append('<h3>' + (round.roundid == current.roundid ? '' :
+  control_group.append('<h3 class="roundclass">' + (round.roundid == current.roundid ? '' :
                                  '<img data-name="triangle" src="img/triangle_east.png"/>')
                        + round.classname + '</h3>');
 
@@ -589,6 +611,7 @@ function generate_scheduling_control_group(round, current, timer_state) {
 // Injects new values into an existing scheduling control group.  The
 // available control buttons get rewritten entirely.
 function inject_into_scheduling_control_group(round, current, timer_state) {
+  console.log("inject_into_scheduling_control_group()"); console.log(round);  // TODO
   var control_group = $("[data-roundid=" + round.roundid + "]");
 
   inject_progress_text(control_group, round);
@@ -604,7 +627,13 @@ function inject_into_scheduling_control_group(round, current, timer_state) {
     buttons.append('<input type="button" data-enhanced="true"'
                    + ' onclick="handle_master_next_up()" value="Next Up"/>');
   } else {
-    if (round.racers_unscheduled > 0) {
+    if (round.heats_scheduled > 0 && round.heats_run == 0) {
+      buttons.append('<input type="button" data-enhanced="true"'
+                     + ' onclick="handle_unschedule_button(' + round.roundid
+                     + ', \'' + round.classname.replace(/"/g, '&quot;').replace(/'/, "\\'") + '\', '
+                     + round.round + ')"'
+                     + ' value="Unschedule"/>');
+    } else if (round.racers_unscheduled > 0) {
       if (round.heats_run == 0) {
         if (timer_state.lanes != '' && timer_state.lanes > 0) {
           buttons.append('<input type="button" data-enhanced="true"'
@@ -620,13 +649,6 @@ function inject_into_scheduling_control_group(round, current, timer_state) {
                        + ' onclick="handle_reschedule_button(' + round.roundid + ')"'
                        + ' value="Reschedule"/>');
       }
-    }
-    else if (round.heats_scheduled > 0 && round.heats_run == 0) {
-      buttons.append('<input type="button" data-enhanced="true"'
-                     + ' onclick="handle_unschedule_button(' + round.roundid
-                     + ', \'' + round.classname.replace(/"/g, '&quot;').replace(/'/, "\\'") + '\', '
-                     + round.round + ')"'
-                     + ' value="Unschedule"/>');
     }
 
     if (round.heats_scheduled == 0 && round.heats_run == 0 &&
@@ -649,6 +671,11 @@ function inject_into_scheduling_control_group(round, current, timer_state) {
                        + ' onclick="handle_race_button(' + round.roundid + ')"'
                        + ' value="Race"/>');
       }
+    }
+    if (round.heats_run > 0) {
+        buttons.append('<input type="button" data-enhanced="true"'
+                       + ' onclick="handle_purge_button(' + round.roundid + ', ' + round.heats_run + ')"'
+                       + ' value="Purge Results"/>');
     }
 
     // TODO: AND there isn't already a next round or grand finals with
