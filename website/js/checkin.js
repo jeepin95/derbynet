@@ -31,7 +31,7 @@ function preserve_autocrop_state() {
 
 // This executes when a checkbox for "Passed" is clicked.
 function handlechange_passed(cb, racer) {
-    // cb is the checkbox element, with name "pased-" plus the racer id, e.g., passed-1234
+    // cb is the checkbox element, with name "passed-" plus the racer id, e.g., passed-1234
     if (!cb.checked && !confirm("Are you sure you want to unregister " + racer + "?")) {
 	    cb.checked = true;
 	    return;
@@ -500,13 +500,12 @@ function close_photo_modal() {
 }
 
 function compare_first(a, b) {
-  if (a[0] == b[0])
-      return 0;
-  if (a[0] < b[0])
-      return -1;
-   return 1;
+  for (var i = 0; i < a[0].length; ++i) {
+    if (a[0][i] < b[0][i]) return -1;
+    if (a[0][i] > b[0][i]) return 1;
+  }
+  return 0;
 }
-
 
 function sorting_key(row) {
   if (g_order == 'class') {
