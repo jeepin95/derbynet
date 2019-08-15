@@ -34,10 +34,8 @@ All lanes must finish before the time is sent to DerbyNet. Lanes not occupied in
 
 $path = '/var/lib/derbynet';
 chdir($path);
-
+// Using https://github.com/kbjr/Git.php for access to GIT
 $repo = Git::open($path);
-
-
 ?>
 <div>
 <b>New Backup Name:</b> <input id="new_branch"><br/>
