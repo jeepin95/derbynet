@@ -156,13 +156,7 @@ if ($two_columns) {
   echo "<div class='block_buttons'>\n";
 }
 
-// Buttons for the added manual timer and git backup pages
-if (have_permission(SET_UP_PERMISSION)) {
-  echo "<div class='double'>";
-  echo "<a class='button_link left before_button' href='manual_timer.php'>Manual<br>Timer</a>\n";
-  echo "<a class='button_link left before_button' href='git_backup.php'>Git<br>Backup</a>\n";
-  echo "</div>";
-}
+
 // *********** After ***************
 $need_spacer = make_link_button('Present Awards', 'awards-presentation.php', PRESENT_AWARDS_PERMISSION, 'after_button');
 $need_spacer = make_link_button('Standings', 'standings.php', VIEW_AWARDS_PERMISSION, 'after_button') || $need_spacer;
@@ -170,7 +164,16 @@ $need_spacer = make_link_button('Exported Results', 'export-results.php', VIEW_R
 
 $need_spacer = make_link_button('History', 'history.php', SET_UP_PERMISSION, 'after_button') || $need_spacer;
 
+// Buttons for the added manual timer and git backup pages
+if (have_permission(SET_UP_PERMISSION)) {
+  echo "<div class='double'>";
+  echo "<a class='button_link left before_button' href='manual_timer.php'>Manual<br>Timer</a>\n";
+  echo "<a class='button_link left before_button' href='git_backup.php'>Git<br>Backup</a>\n";
+  echo "</div>";
+}
+
 make_spacer_if($need_spacer);
+
 
 // *********** Other ***************
 make_link_button('Printables', 'print.php', ASSIGN_RACER_IMAGE_PERMISSION, 'other_button');
