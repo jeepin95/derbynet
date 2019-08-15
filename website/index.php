@@ -162,8 +162,6 @@ $need_spacer = make_link_button('Present Awards', 'awards-presentation.php', PRE
 $need_spacer = make_link_button('Standings', 'standings.php', VIEW_AWARDS_PERMISSION, 'after_button') || $need_spacer;
 $need_spacer = make_link_button('Exported Results', 'export-results.php', VIEW_RACE_RESULTS_PERMISSION, 'after_button') || $need_spacer;
 
-$need_spacer = make_link_button('History', 'history.php', SET_UP_PERMISSION, 'after_button') || $need_spacer;
-
 // Buttons for the added manual timer and git backup pages
 if (have_permission(SET_UP_PERMISSION)) {
   echo "<div class='double'>";
@@ -171,6 +169,10 @@ if (have_permission(SET_UP_PERMISSION)) {
   echo "<a class='button_link left before_button' href='git_backup.php'>Git<br>Backup</a>\n";
   echo "</div>";
 }
+
+$need_spacer = make_link_button('History', 'history.php', SET_UP_PERMISSION, 'after_button') || $need_spacer;
+
+
 
 make_spacer_if($need_spacer);
 
