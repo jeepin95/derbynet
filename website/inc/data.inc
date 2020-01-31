@@ -14,8 +14,8 @@ if (!isset($db)) {
 $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 //echo '<pre>'; print_r(PDO::getAvailableDrivers()); echo '</pre>';
-// On Mac, produces array('mysql', 'sqlite')
-// On Windows, produces array('mysql', 'odbc', 'sqlite')
+// On Mac, produces array('sqlite')
+// On Windows, produces array('odbc', 'sqlite')
 
 $dbtype = $db->getAttribute(PDO::ATTR_DRIVER_NAME);
 if ($dbtype == 'odbc') {
@@ -38,8 +38,6 @@ function db_compare_completed($expr) {
   global $dbtype;
   if ($dbtype == 'sqlite') {
     return "datetime($expr)";
-  } else if ($dbtype == 'mysql') {
-    return "timestamp($expr)";
   } else if ($dbtype == 'access') {
     return "CDate($expr)";
   }
@@ -256,5 +254,10 @@ function warn_no_timer() {
 
 function is_windows_server() {
   return strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+}
+
+function is_no_such_table_exception(/* PDOException */ $p) {
+  return $p->getCode() == '42S02' ||
+      ($p->getCode() == 'HY000' && stripos($p->getMessage(), "no such table") !== false);
 }
 ?>

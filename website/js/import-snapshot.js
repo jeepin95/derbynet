@@ -5,9 +5,8 @@ function onFormSubmit(e) {
     url: "action.php",
     type: "POST",
     data:  new FormData(this),
-   contentType: false,
-         cache: false,
-   processData:false,
+    contentType: false,
+    processData:false,
     success: function(data) {
       var succ = data.documentElement.getElementsByTagName("success");
       if (succ && succ.length > 0) {

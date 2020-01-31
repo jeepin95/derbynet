@@ -14,12 +14,14 @@ require_permission(SET_UP_PERMISSION);
 <link rel="stylesheet" type="text/css" href="css/jquery.mobile-1.4.2.css"/>
 <link rel="stylesheet" type="text/css" href="css/class-editor.css"/>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/mobile-init.js"></script>
 <script type="text/javascript" src="js/jquery-ui-1.10.4.min.js"></script>
 <script type="text/javascript" src="js/jquery.mobile-1.4.2.min.js"></script>
 <script type="text/javascript" src="js/jquery.ui.touch-punch.min.js"></script>
 <script type="text/javascript" src="js/modal.js"></script>
 <script type="text/javascript" src="js/dashboard-ajax.js"></script>
+<script type="text/javascript" src="js/wrap-flipswitch.js"></script>
 <script type="text/javascript" src="js/class-editor.js"></script>
 <script type="text/javascript">
 function use_subgroups() { return <?php echo json_encode(read_raceinfo_boolean('use-subgroups')); ?>; }
@@ -52,6 +54,9 @@ make_banner(group_label().' Editor', 'setup.php'); ?>
     <input type="button" value="Add <?php echo group_label(); ?>" data-enhanced="true"
            onclick="show_add_class_modal();" />
 
+    <input type="button" value="Add Aggregate" data-enhanced="true"
+           onclick="show_add_aggregate_modal();" />
+
     <br/>
 
     <input type="button" value="Close" data-enhanced="true"
@@ -61,10 +66,31 @@ make_banner(group_label().' Editor', 'setup.php'); ?>
 
 
 <div id="add_class_modal" class="modal_dialog hidden block_buttons">
-  <h3>Add New <?php echo group_label(); ?></h3>
   <form>
+    <div id="aggregate-only">
+      <h3>Choose 2 or more constituents:</h3>
+      <div id="aggregate-constituents">
+      </div>
+    </div>
     <input type="hidden" name="action" value="class.add"/>
+    <h3>Add New <?php echo group_label(); ?></h3>
     <input name="name" type="text"/>
+    <h3>Number of speed trophies:</h3>
+    <select name="ntrophies">
+      <option value="-1" selected="selected">Default</option>
+      <option>0</option>
+      <option>1</option>
+      <option>2</option>
+      <option>3</option>
+      <option>4</option>
+      <option>5</option>
+      <option>6</option>
+      <option>7</option>
+      <option>8</option>
+      <option>9</option>
+      <option>10</option>
+    </select>
+    <h3>&nbsp;</h3>
 
     <input type="submit" data-enhanced="true"/>
     <input type="button" value="Cancel" data-enhanced="true"
@@ -74,12 +100,33 @@ make_banner(group_label().' Editor', 'setup.php'); ?>
 
 
 <div id="edit_one_class_modal" class="modal_dialog hidden block_buttons">
-  <h3>New <?php echo group_label(); ?> Name</h3>
   <form>
+    <h3><?php echo group_label(); ?> Name</h3>
     <input id="edit_class_name" name="name" type="text"/>
+
+    <h3>Number of speed trophies:</h3>
+    <select id="edit_class_ntrophies" name="ntrophies">
+      <option value="-1">Default</option>
+      <option>0</option>
+      <option>1</option>
+      <option>2</option>
+      <option>3</option>
+      <option>4</option>
+      <option>5</option>
+      <option>6</option>
+      <option>7</option>
+      <option>8</option>
+      <option>9</option>
+      <option>10</option>
+    </select>
+    <h3>&nbsp;</h3>
 
     <div id="completed_rounds_extension">
       <p><span id="completed_rounds_count"></span> completed round(s) exist for this class.</p>
+    </div>
+
+    <div id="constituent_extension">
+      <p>Constituent of <span id="constituent_owner"></span>, possibly other aggregates.</p>
     </div>
 
     <div id="edit_ranks_extension" class="hidden">

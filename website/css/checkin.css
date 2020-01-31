@@ -3,6 +3,10 @@ tr.d0 td {
   background-color: #fcf6cf;
 }
 
+tr.highlight td {
+  background-color: #ff8080;
+}
+
 #edit_racer_modal {
     width: 400px;
 }
@@ -103,7 +107,7 @@ tr.d0 td {
 }
 
 tr.exclude-racer td.checkin-status {
-  background-image: url('../img/asterisk.png');
+  background-image: url('../img/no-trophy.png');
   background-repeat: no-repeat;
 }
 

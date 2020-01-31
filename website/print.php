@@ -6,18 +6,9 @@ require_once('inc/banner.inc');
 require_once('inc/authorize.inc');
 require_once('inc/photo-config.inc');
 
-require_once('print/docs/racer/printable_racer_document.inc');
-require_once('print/docs/award/printable_award_document.inc');
-
-require_once('print/inc/load_document_files.inc');
-load_document_files_from(dirname(__FILE__)
-                         . DIRECTORY_SEPARATOR . 'print'
-                         . DIRECTORY_SEPARATOR . 'docs'
-                         . DIRECTORY_SEPARATOR . 'racer');
-load_document_files_from(dirname(__FILE__)
-                         . DIRECTORY_SEPARATOR . 'print'
-                         . DIRECTORY_SEPARATOR . 'docs'
-                         . DIRECTORY_SEPARATOR . 'award');
+require_once('print/inc/printable_racer_document.inc');
+require_once('print/inc/printable_award_document.inc');
+require_once('print/inc/printable_summary_document.inc');
 
 // TODO Printables should really have their own permission, but we need a
 // migration path for updating existing user config files.
@@ -29,14 +20,42 @@ foreach (get_declared_classes() as $c) {
   if (is_subclass_of($c, 'PrintableRacerDocument') && !(new ReflectionClass($c))->isAbstract()) {
     $doc = new $c();
     $doc_classes[$c] = array('type' => 'racer',
+                             'order' => 1,
+                             'name' => $doc->name(),
                              'options' => $doc->get_available_options());
   }
   if (is_subclass_of($c, 'PrintableAwardDocument') && !(new ReflectionClass($c))->isAbstract()) {
     $doc = new $c();
     $doc_classes[$c] = array('type' => 'award',
+                             'order' => 2,
+                             'name' => $doc->name(),
+                             'options' => $doc->get_available_options());
+  }
+  if (is_subclass_of($c, 'PrintableSummaryDocument') && !(new ReflectionClass($c))->isAbstract()) {
+    $doc = new $c();
+    $doc_classes[$c] = array('type' => 'summary',
+                             'order' => 3,
+                             'name' => $doc->name(),
                              'options' => $doc->get_available_options());
   }
 }
+
+function order_by_name($left, $right) {
+  if ($left['order'] < $right['order']) {
+    return -1;
+  } else if ($left['order'] > $right['order']) {
+    return 1;
+  } else  if ($left['name'] < $right['name']) {
+    return -1;
+  } else if ($left['name'] > $right['name']) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+uasort($doc_classes, 'order_by_name');
+
 ?><!DOCTYPE html>
 <html>
 <head>
@@ -47,6 +66,7 @@ foreach (get_declared_classes() as $c) {
 <link rel="stylesheet" type="text/css" href="css/jquery.mobile-1.4.2.css"/>
 <link rel="stylesheet" type="text/css" href="css/print.css"/>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/jquery-ui-1.10.4.min.js"></script>
 <script type="text/javascript" src="js/jquery.ui.touch-punch.min.js"></script>
 <script type="text/javascript" src="js/pseudo-mobile.js"></script>
@@ -74,7 +94,6 @@ echo "<div data-role='controlgroup'>\n";
 foreach ($doc_classes as $c => $details) {
   ++$radio_count;
   $options = $details['options'];
-  $doc = new $c();
 
   if ($radio_count > 0 && $details['type'] != $last_type) {
     echo "<div class='radio-spacer'>&nbsp;</div>\n";
@@ -82,7 +101,7 @@ foreach ($doc_classes as $c => $details) {
   $last_type = $details['type'];
 
   echo "<label for='doc-class-".$c."'>";
-  echo "<b>".$doc->name()."</b>";
+  echo "<b>".$details['name']."</b>";
   echo "</label>\n";
 
   echo "<input type='radio' name='doc-class' id='doc-class-".$c."'";
@@ -97,8 +116,7 @@ echo "</div>\n";  // controlgroup
 // be switched on and off depending on which document type is chosen.
 foreach ($doc_classes as $c => $details) {
   echo "<div data-docname=\"".$c."\" class=\"sub-options hidden\">";
-  $doc = new $c();
-  echo "<p>Options for <b>".$doc->name()."</b></p>";
+  echo "<p>Options for <b>".$details['name']."</b></p>";
   foreach ($details['options'] as $opt => $opt_data) {
     $ctrl_name = $c.'-'.$opt;
     echo "<div class='param'>\n";
@@ -144,7 +162,9 @@ foreach ($doc_classes as $c => $details) {
     </div>
 
     <div id="sortorder-awards-div">
+    </div>
 
+    <div id="sortorder-summary-div">
     </div>
 
     <input type="button" data-enhanced="true" value="Select All" onclick="select_all(true)"/>
@@ -160,6 +180,9 @@ foreach ($doc_classes as $c => $details) {
       <table></table>
     </div>
     <div id="subject-awards" class="block_buttons hidden">
+      <table></table>
+    </div>
+    <div id="subject-summary" class="block_buttons hidden">
       <table></table>
     </div>
   </div>

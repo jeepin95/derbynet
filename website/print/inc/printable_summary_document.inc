@@ -1,13 +1,17 @@
 <?php
+require_once('print/inc/load_document_files.inc');
 
-require_once('print/inc/layout.inc');
-
-abstract class PrintableAwardDocument {
+abstract class PrintableSummaryDocument {
   protected $pdf;
-  protected $layout;
   protected $options;  // Contents vary by document type
 
+  // Returns an array of key => {type:, desc:, default:}, with an entry for each
+  // option key understood by the document class.
+  //
+  // type can be one of 'bool', 'string', 'int'.
   abstract function get_available_options();
+
+  // Returns a name for the document class
   abstract function name();
 
   function set_options($options) {
@@ -23,21 +27,7 @@ abstract class PrintableAwardDocument {
 
   abstract function StartDocument();
 
-  // $award argument contains these keys:
-  //
-  // awardid
-  // awardname
-  // awardtype
-  // classid
-  // rankid
-  // racerid
-  //
-  abstract function DrawOneAt($left, $top, &$award);
-
-  public function DrawOne(&$award) {
-    $xy = $this->layout->NextTopLeft();
-    $this->DrawOneAt($xy['x'], $xy['y'], $award);
-  }
+  abstract function Draw();
 
   public function Output() {
     $this->pdf->Output();
@@ -46,8 +36,9 @@ abstract class PrintableAwardDocument {
   protected function initialize_pdf($orientation, $unit, $size) {
     $this->pdf = new PDF_Combined($orientation, $unit, $size);
   }
-
-  protected function initialize_layout($doc_width, $doc_height) {
-    $this->layout = new DocumentLayout($this->pdf, $doc_width, $doc_height);
-  }
 }
+
+load_document_files_from(dirname(dirname(__FILE__))
+                         . DIRECTORY_SEPARATOR . 'docs'
+                         . DIRECTORY_SEPARATOR . 'summary');
+?>

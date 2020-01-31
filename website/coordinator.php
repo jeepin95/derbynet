@@ -12,6 +12,7 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
 <?php require('inc/stylesheet.inc'); ?>
 <link rel="stylesheet" type="text/css" href="css/jquery.mobile-1.4.2.css"/>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/jquery-ui-1.10.4.min.js"></script>
 <link rel="stylesheet" type="text/css" href="css/coordinator.css"/>
 <script type="text/javascript" src="js/mobile-init.js"></script>
@@ -19,6 +20,7 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
 <script type="text/javascript" src="js/jquery.mobile-1.4.2.min.js"></script>
 <script type="text/javascript" src="js/dashboard-ajax.js"></script>
 <script type="text/javascript" src="js/modal.js"></script>
+<script type="text/javascript" src="js/wrap-flipswitch.js"></script>
 <script type="text/javascript" src="js/coordinator.js"></script>
 </head>
 <body>
@@ -109,12 +111,14 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
         <option>6</option>
     </select>
 
-    <input type="submit" data-enhanced="true" value="Schedule + Race"
-      data-race="true" onclick='mark_clicked($(this));'/>
-    <input type="submit" data-enhanced="true" value="Schedule Only"
-      data-race="false" onclick='mark_clicked($(this));'/>
+    <input id="schedule-and-race"
+           type="submit" data-enhanced="true" value="Schedule + Race"
+           data-race="true" onclick='mark_clicked($(this));'/>
+    <input id="schedule-only"
+           type="submit" data-enhanced="true" value="Schedule Only"
+           data-race="false" onclick='mark_clicked($(this));'/>
     <input type="button" data-enhanced="true" value="Cancel"
-      onclick='close_modal("#schedule_modal");'/>
+           onclick='close_modal("#schedule_modal");'/>
   </form>
 </div>
 
@@ -135,7 +139,7 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
 <div id='replay_settings_modal' class="modal_dialog hidden block_buttons">
   <form>
     <input type="hidden" name="action" value="settings.write"/>
-
+<?php /*
     <label for="replay-skipback">Duration of replay, in seconds:</label>
     <!-- Could be any decimal value... -->
     <!-- TODO MacReplay only accepts integral skipback values presently -->
@@ -152,7 +156,7 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
         <option value="6">6.0</option>
         <!-- <option>6.5</option> -->
     </select>
-
+*/ ?>
     <label for="replay-num-showings">Number of times to show replay:</label>
     <!-- Could be any positive integer -->
     <select id="replay-num-showings" name="replay-num-showings">
@@ -195,7 +199,7 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
     <?php if (read_raceinfo('use-subgroups')) { ?>
       <p>racers from</p>
       <div class="centered_flipswitch">
-        <input type="checkbox" data-role="flipswitch" name="bucketed" id="bucketed"
+        <input type="checkbox" data-role="flipswitch" name="bucketed" id="bucketed_single"
                data-on-text="Each <?php echo subgroup_label(); ?>" data-off-text="Overall"/>
       </div>
     <?php } else { ?>
@@ -206,9 +210,11 @@ require_permission(SET_UP_PERMISSION);  // TODO: What's the correct permission?
     <div class="multi_den_only">
       <p>racers from</p>
       <div class="centered_flipswitch">
-        <input type="checkbox" data-role="flipswitch" name="bucketed" id="bucketed"
+        <input type="checkbox" data-role="flipswitch" name="bucketed" id="bucketed_multi"
                data-on-text="Each <?php echo group_label(); ?>" data-off-text="Overall"/>
       </div>
+       <p>Name for new round:</p>
+       <input type="text" name="classname" id="agg_classname" value="Grand Finals"/>
     </div>
 
     <input type="submit" data-enhanced="true" value="Submit"/>

@@ -1,27 +1,71 @@
 <?php
 require_once('inc/data.inc');
+require_once('inc/classes.inc');
 require_once('inc/schema_version.inc');
 require_once('inc/name-mangler.inc');
 require_once('inc/ordinals.inc');
+require_once('inc/aggregate_round.inc');
 
+/////////////////////////////////////////////////////////////////////////////////////
 // For a given roundid, it's straightforward to calculate standings within the
 // round, provided all the heats have been run.  If not all heats have been run,
 // compare each racer's scoring-expression if it's well-defined, otherwise treat
 // as 9.999.  (Or, treat all missing heat times as 9.999...)
 //
 // Assuming roundid standings can be computed, define den (class) standing to be
-// the standings of the highest-numbered round for that class.  If there are
-// (say) 2 rounds of racing, this means that racers eliminated in the first
-// round don't having a den standing.
+// the standings of the highest-numbered round for that class.  This applies
+// both to native classes, and to aggregate classes that have associated racing
+// rounds.  If there are (say) 2 rounds of racing for the class, this means that
+// racers eliminated in the first round don't having a class standing.
+//
+// Classes that don't have racing rounds (called "nonracing aggregate classes")
+// are a little different.  Their standings are determined by the highest round
+// of racing for each constituent class.  (If the constituent class is also a
+// nonracing aggregate class, then its constituent classes are examined.)
+//
+// A native class can be partitioned into ranks (subgroups).  Standings for a
+// rank are imposed by the standings for the class, with numbering considering
+// only members of a given rank.
 //
 // For the whole field, define standings as:
 //
-//  - If there are any Grand Final rounds, then the round standings for the
-//    highest-numbered Grand Final round.  (Define Grand Final round.)
+//  - In the absence of any aggregate rounds, then take the highest-numbered
+//    round from each (native) class, and combine into an aggregate standing.
+//    Some classes may have more rounds than others.
 //
-//  - In the absence of any Grand Final rounds, then take the highest-numbered
-//    round from each class, and combine into an aggregate standing.  Some
-//    classes may have more rounds than others.
+//  - If there is a single aggregate class, then the round standings for the
+//    highest-numbered aggregate round.  (That's a guess.)
+//
+//  - If there is more than one aggregate class, then there is no overall
+//    standing.
+/////////////////////////////////////////////////////////////////////////////////////
+
+// First we construct a "result summary," which is an ordered array whose
+// entries represent the performance of one racer in one racing round.  The
+// result summary is ordered from best (least) score to worst.  The standings
+// for any particular group, subgroup, aggregate group, supergroup, round, or
+// subgroup-within-a-round are determined by the overall ordering.
+//
+// For each group, subgroup, aggregate group, supergroup, round, or
+// subgroup-in-round, we can construct a "ladder," represented as an array of
+// rungs, each rung being an array of racerids, the zero'th rung representing
+// first place.  In the absence of ties, each rung holds exactly one racerid.
+// If there's a tie, a rung will contain more than one racerid, and one or more
+// subsequent rungs will be empty.
+/////////////////////////////////////////////////////////////////////////////////////
+
+function standings_key_superclass() { return 'superclass'; }
+function standings_key_class($classid) { return 'c'.$classid; }
+function standings_key_subgroup($rankid) { return 'r'.$rankid; }
+function standings_key_round($roundid) { return 'round'.$roundid; }
+function standings_key_round_subgroup($roundid, $rankid) { return 'rr'.$roundid.'-'.$rankid; }
+
+function is_standings_key_class($key) { return $key[0] == 'c'; }
+function is_standings_key_round_subgroup($key) { return $key[0] == 'r' && $key[1] == 'r'; }
+
+function parse_standings_key_class($key) { return substr($key, 1); }
+// list($roundid, $rankid)
+function parse_standings_key_round_subgroup($key) { return explode('-', substr($key, 2)); }
 
 // Assumes we're in the context of a GROUP BY for one racer and one roundid.
 // $finishtime and $finishplace are, respectively, the sql expressions for
@@ -31,23 +75,25 @@ require_once('inc/ordinals.inc');
 // by finish place, exactly as if it were a time.  E.g., treat 1st place like it
 // was 1.00 seconds, 2nd place as 2.00 seconds, and so on.
 function sql_scoring_expression($finishtime, $finishplace) {
+  global $dbtype;
   $finish = read_raceinfo_boolean('use-points') ? $finishplace.'*1.0' : $finishtime;
   return read_raceinfo_boolean('drop-slowest') 
-      ? '(SUM('.$finish.') - MAX('.$finish.'))/(COUNT(*) - 1)'
-      : 'SUM('.$finish.')/COUNT(*)';
+      ? ($dbtype == 'sqlite'
+         ?  "CASE COUNT(*)"
+             ." WHEN 1 THEN MAX($finish)"
+             ." ELSE (SUM($finish) - MAX($finish))/(COUNT(*) - 1)"
+             ." END"
+         : "(SUM($finish) - MAX($finish))/(COUNT(*) - 1)" )
+      : "SUM($finish)/COUNT(*)";
 }
 
-// Returns a list of roundids for the highest-numbered round for each native
-// class with participants.
-function final_native_roundids() {
+// Returns the final roundids for all classes, either native classes or
+// aggregate classes.
+function final_roundids_for_all_classes() {
   global $db;
   $stmt = $db->query('SELECT R2.roundid AS roundid'
                      .' FROM (SELECT Rounds.classid, MAX(round) AS max_round'
                      .'       FROM Rounds'
-                     // The join with RegistrationInfo is to filter out the
-                     // Grand Finals class, which has no registered members.
-                     .'       INNER JOIN RegistrationInfo'
-                     .'       ON Rounds.classid = RegistrationInfo.classid'
                      .'       GROUP BY Rounds.classid) AS R1'
                      .' INNER JOIN Rounds AS R2'
                      .' ON R1.classid = R2.classid'
@@ -59,38 +105,27 @@ function final_native_roundids() {
   return $roundids;
 }
 
-// Filters $roundids (an array of roundids) to just those rounds that have been
-// completed (i.e., that have no uncompleted heats).
-function completed_roundids($roundids) {
-  global $db;
-  if (count($roundids) == 0) {
-    return $roundids;
-  }
-  $stmt = $db->query('SELECT roundid FROM Rounds'
-                     .' WHERE roundid IN ('.implode(',', $roundids).')'
-                     .' AND NOT EXISTS(SELECT 1 FROM RaceChart'
-                     .'                WHERE RaceChart.roundid = Rounds.roundid'
-                     .'                  AND finishtime IS NULL'
-                     .'                  AND finishplace IS NULL)');
-  $roundids = array();
-  foreach ($stmt as $row) {
-	$roundids[] = $row['roundid'];
-  }
-  return $roundids;
-}
-
-// Returns false if there are no grand final rounds, otherwise the roundid of the
-// grand-final round with the highest round number.
+// If there are no aggregate classes, returns false.
 //
-// Note that we're identifying the grand final rounds in part by the class name,
-// which has to match that from the roster.new action.
-function last_grand_final_roundid() {
+// If there's just one aggregate class, chooses the roundid of its highest
+// round.  We're assuming that the single aggregate class is the Grand Finals
+// round that determines overall standings.
+//
+// If there's more than one aggregate class, returns 0 (which means there's no
+// round for determining overall standings).
+function last_aggregate_roundid() {
+  $agg_classes = aggregate_classes();
+  if (count($agg_classes) == 0) {
+    return false;
+  }
+  if (count($agg_classes) > 1) {
+    // We decline to pick a roundid that establishes overall results
+    return 0;
+  }
   return read_single_value('SELECT R2.roundid AS roundid'
                            .' FROM (SELECT classid, MAX(round) AS max_round'
                            .'       FROM Rounds'
-                           .'       WHERE classid IN '
-                           .'            (SELECT classid FROM Classes'
-                           .'             WHERE class = \'Grand Finals\')'
+                           .'       WHERE classid = :classid'
                            .'       AND NOT EXISTS('
                            .'            SELECT 1 FROM RegistrationInfo'
                            .'            WHERE RegistrationInfo.classid = Rounds.classid)'
@@ -98,67 +133,111 @@ function last_grand_final_roundid() {
                            .' INNER JOIN Rounds AS R2'
                            .' ON R1.classid = R2.classid'
                            .' AND R1.max_round = R2.round',
-                           array());
+                           array(':classid' => $agg_classes[0]));
 }
 
-// Returns the list of roundids from which the field's overall standings should
-// be assessed.  Returns an array of roundid values for "final" rounds, i.e.,
-// the highest-numbered round for each class.
-function final_roundids() {
-  $last_grand = last_grand_final_roundid();
-  if ($last_grand) {
-    return array($last_grand);
+// Returns true if we can assess standings for the whole field (supergroup) --
+// either there are no aggregate classes or exactly one.
+function has_supergroup_standings() {
+  return last_aggregate_roundid() !== 0;
+}
+
+function supergroup_groups() {
+  global $db;
+  $agg_classes = aggregate_classes();
+  if (count($agg_classes) == 0) {
+    $classes = array();
+    $stmt = $db->query('SELECT classid FROM Classes');
+    foreach ($stmt as $row) {
+      $classes[] = $row[0];
+    }
+    return $classes;
+  } else if (count($agg_classes) == 1) {
+    return array($agg_classes[0]['classid']);
+  } else {
+    return false;
   }
-  return final_native_roundids();
 }
 
-// Returns summary results for each racer within each round they participated in.
-// Each summary element gives round information (roundid, classid), racer
-// information (racerid, name, carnumber), and outcome information (number of
-// heats the racer has run in the round so far, best time, worst time, scoring
-// time), and a flag telling whether this round's result counts toward any final
-// ranking for the full field.
-//
-// Returns summary results for each racer within each race they participated in.
-// Each summary element gives:
-//    roundid, classid -- round information
-//    racerid, firstname, lastname, carnumber, carname, classid, rankid -- racer information
-//    class -- name of racer's (native) class (i.e., not "Grand Finals")
-//    rank -- name of racer's rank
+
+// Returns the inverted map taking constituent classids to the non-racing
+// aggregate classes that depend on them.  If $with_supergroup, also includes
+// entries for the supergroup, which is represented as a classid of -1.
+function inverted_constituents($with_supergroup = false) {
+  global $db;
+  // Maps classids for aggregate classes to a list of classids of the constituents.
+  $forward_map = array();
+  $result = array();
+  
+  if ($with_supergroup) {
+    $supergroup_groups = supergroup_groups();
+    if ($supergroup_groups !== false) {
+      $forward_map["-1"] = $supergroup_groups;
+    }
+  }
+
+  if (schema_version() >= 3) {
+    $stmt = $db->prepare('SELECT classid, constituents FROM Classes'
+                         .' WHERE constituents != \'\''
+                         .'  AND NOT EXISTS(SELECT 1 FROM Rounds'
+                         .'                 WHERE Rounds.classid = Classes.classid)');
+    $stmt->execute(array());
+    foreach ($stmt as $row) {
+      $constituents = explode(',', $row['constituents']);
+      $forward_map[$row['classid']] = $constituents;
+    }
+  }
+
+  foreach ($forward_map as $classid => $constituents) {
+    foreach ($constituents as $c) {
+      if (!isset($result[$c])) {
+        $result[$c] = array();
+      }
+      $result[$c][] = $classid;
+    }
+  }
+
+  // Transitive closure
+  do {
+    $repeat = false;
+    foreach ($forward_map as $nr => $constituents) {
+      if (isset($result[$nr])) {
+        // Constituents of $nr are (get added as) constituents of the classes of
+        // which $nr is a constituent
+        // $aggregates are the aggregate classes that incorporate $nr as a constituent.
+        $aggregates = $result[$nr];
+        foreach ($constituents as $nr_constit) {
+          foreach ($aggregates as $agg) {
+            if (!in_array($agg, $result[$nr_constit])) {
+              $result[$nr_constit][] = $agg;
+              $repeat = true;
+            }
+          }
+        }
+      }
+    }
+  } while ($repeat);
+
+  return $result;
+}
+
+// Returns a summary for each racer's result within each round they participated
+// in.  The results are ordered best-to-worst across all the racers and rounds
+// in the database.  Each summary element gives:
+//    roundid -- round information
+//    round_classid -- the classid associated with the round -- may be an
+//        aggregate class.  For non-racing aggregate classes, the round entry is
+//        repeated with the classid of the non-racing aggregate class, if this
+//        round serves to establish standing in the class.
+//    racerid, firstname, lastname, carnumber, carname, classid, rankid -- racer
+//        information
+//    classid, class -- name of racer's (native) class (i.e., not "Grand Finals")
+//    rankid, rank -- name of racer's rank
 //    base -- number of heats run in round
 //    time -- "average" time in this round, possibly after discarding worst heat
 //    best, worst -- fastest and slowest time in this round
-//    for_group -- 1 if this round determines group standings (i.e. is final round for group)
-//    for_supergroup -- 1 if this entry determines full-field standing for this racer
-function final_standings($completed_only = false) {
+function result_summary() {
   global $db;
-  
-  $roundids_for_groups = final_native_roundids();
-  $roundids_for_supergroup = last_grand_final_roundid();
-  if ($roundids_for_supergroup === false) {
-    $roundids_for_supergroup = $roundids_for_groups;
-  } else {
-    $roundids_for_supergroup = array($roundids_for_supergroup);
-  }
-
-  if ($completed_only) {
-    $roundids_for_groups = completed_roundids($roundids_for_groups);
-    // supergroup standings aren't known until ALL rounds have completed.
-    if (read_single_value('SELECT COUNT(*) FROM RaceChart'
-                          .' WHERE finishtime IS NULL AND finishplace IS NULL') > 0) {
-      $roundids_for_supergroup = [];
-    }
-  }
-  
-  // It's invalid SQL to test for ' IN () ', so make sure there's at least one
-  // (invalid) roundid.
-  $roundids_for_groups[] = 0;
-  $roundids_for_supergroup[] = 0;
-
-  // We want this "overall" set of results, ordered by time score.  For any
-  // other rounds (Rounds.roundid NOT IN (0,...)), we're going to need to place
-  // the values in a separate map by roundid.
-  // 
 
   $scoring_expr = sql_scoring_expression('finishtime', 'finishplace');
   $raw_expr = read_raceinfo_boolean('use-points') ? 'finishplace' : 'finishtime';
@@ -172,12 +251,16 @@ function final_standings($completed_only = false) {
     $avg_expr = $scoring_expr;
   }
 
-  $stmt = $db->query('SELECT Rounds.roundid, Rounds.classid as round_classid, '
+  // GROUP BY makes each returned row a summary of the outcome for one racer in
+  // one round.
+  //
+  // ORDER BY means rows are ordered from best showing to worst, which means
+  // they're also ordered best to worst within any given group.
+  $stmt = $db->query('SELECT Rounds.roundid,'
+                     .' Rounds.classid as round_classid, '
                      .' RegistrationInfo.racerid, firstname, lastname, carnumber, carname,'
                      // classid is the racer's 'native' class, not the round's class (e.g. Grand Finals)
                      .' RegistrationInfo.classid, class, RegistrationInfo.rankid, rank,'
-                     .' Rounds.roundid IN ('.implode(',', $roundids_for_groups).') AS for_group,'
-                     .' Rounds.roundid IN ('.implode(',', $roundids_for_supergroup).') AS for_supergroup,'
                      // base is the number of heats in the round
                      .' COUNT(*) AS base, '
                      .$scoring_expr.' AS score, '.$avg_expr.' AS avg,'
@@ -196,9 +279,9 @@ function final_standings($completed_only = false) {
                      // values is uniquely determined by the racerid.
                      .' GROUP BY Rounds.roundid, RegistrationInfo.racerid, RegistrationInfo.classid, '
                      .'  Rounds.classid, class, RegistrationInfo.rankid, rank, firstname, lastname, carnumber'
-                     //.' HAVING COUNT(*) = '.$nlanes -- racers who finished all their heats
                      // lastname, firstname for reproducible ordering in the event of a tie
                      .' ORDER BY '.$scoring_expr.', lastname, firstname');
+  $stmt->setFetchMode(PDO::FETCH_ASSOC);
   $result = array();
   foreach ($stmt as $row) {
     $result[] = $row;
@@ -207,100 +290,156 @@ function final_standings($completed_only = false) {
   return $result;
 }
 
-function compute_standing(&$row, $key, &$all_so_far, &$result) {
-  if (!isset($all_so_far[$key])) {
-    $all_so_far[$key] = array('count' => 0,
-                          'last_score' => -1,
-                          'last_score_place' => 0,
-                          'last_score_racerid' => 0);
-  }
-
-  $so_far = &$all_so_far[$key];
-
-  ++$so_far['count'];
-  if ($row['score'] <= $so_far['last_score']) {
-    $result[$so_far['last_score_racerid']][$key] = 'T'.$so_far['last_score_place'];
-    return 'T'.$so_far['last_score_place'];
-  } else {
-    $so_far['last_score'] = $row['score'];
-    $so_far['last_score_place'] = $so_far['count'];
-    $so_far['last_score_racerid'] = $row['racerid'];
-    return $so_far['count'];
-  }
-}
-
-// Returns map of racerid to
-// { supergroup c(classid) r(rankid) (roundid) (roundid)... },
-// where each element in the racerid's record gives the racer's place for the
-// (sub/super)group or roundid.
-function collect_standings(&$standings) {
+// Returns roundids for unscheduled or incompletely-raced rounds
+function unfinished_rounds() {
+  global $db;
+  $stmt = $db->query('SELECT roundid, classid FROM Rounds'
+                     .' WHERE NOT EXISTS(SELECT 1 FROM RaceChart'
+                     .'                  WHERE RaceChart.roundid = Rounds.roundid)'
+                     .' OR EXISTS(SELECT 1 FROM RaceChart'
+                     .'           WHERE RaceChart.roundid = Rounds.roundid'
+                     .'             AND finishtime IS NULL AND finishplace IS NULL)');
   $result = array();
-  // $all_so_far maps { supergroup c(classid) r(rankid) (roundid) ... }
-  // to { count, last_score, last_score_place, last_score_racerid }.
-  $all_so_far = array();
-  foreach ($standings as &$row) {
-    $racerid = $row['racerid'];
-    $roundid = $row['roundid'];
-    if (!isset($result[$racerid])) {
-      $result[$racerid] = array();
-    }
-    $racer_result = &$result[$racerid];
-    $racer_result[$roundid] = compute_standing($row, $roundid, $all_so_far, $result);
-    if ($row['for_supergroup']) {
-      $racer_result['supergroup'] = compute_standing($row, 'supergroup', $all_so_far, $result);
-    }
-    if ($row['for_group']) {
-      $classid = $row['classid'];
-      $rankid = $row['rankid'];
-      $racer_result['c'.$classid] = compute_standing($row, 'c'.$classid, $all_so_far, $result);
-      $racer_result['r'.$rankid] = compute_standing($row, 'r'.$rankid, $all_so_far, $result);
-    }
+  foreach ($stmt as $row) {
+    $result[$row[0]] = $row[1];
   }
   return $result;
 }
 
-// Returns an array mapping place (first place is 0th element) to an array of
-// racerids, the array having more than one element if there's a tie.
-//
-// E.g., returns [[11], [1], [21, 41], [], [31]] to indicate a tie for 3rd place.
-//
-// If $rankid is non-null, results are within that rank; if $classid is
-// non-null, results are within that class; if both are null, results are within
-// the supergroup.
-function top_finishers($classid, $rankid, &$standings) {
-  $result = array();
-  $so_far = array('count' => 0,
-                  'last_score' => -1);
-  foreach ($standings as &$row) {
-    $ok = true;
-    if (isset($rankid)) {
-      $ok = $ok && $row['rankid'] == $rankid;
-    }
-    if (isset($classid)) {
-      $ok = $ok && $row['classid'] == $classid;
-    }
-    if (isset($classid) || isset($rankid)) {
-      $ok = $ok && $row['for_group'];
+class StandingsTracker {
+  private $last_score = -1;
+  // The number of recorded scores for this tracker.  This lets us "skip ahead"
+  // when there are ties.
+  private $count = 0;
+
+  // $result[$i] gives the racerids for ($i+1)'th place
+  // E.g., [[11], [1], [21, 41], [], [31]] to indicate a tie for 3rd place.
+  // (There are no 4th place racers in this example; racerid 31 is in 5th
+  // place.)
+  public $result = array();
+
+  // Called in order by score, that is, $score is always no less than all
+  // previous scores in all previous calls for this tracker.  Returns the
+  // zero-based numeric place, with no indication for ties.
+  public function AddEntry($score, $racerid) {
+    ++$this->count;
+    if ($score <= $this->last_score) {
+      // A tie!
+      $place = count($this->result) - 1;  // Index of last populated "place" in the results
+      $this->result[$place][] = $racerid;
+      // The tricky bit here is that only upon the arrival of the second racer
+      // do we find out that there was a tie; we need to be able to go back to
+      // the first racer and update.  That's why we make a second pass to mark
+      // ties, rather than trying to do it on the fly here.
     } else {
-      $ok = $ok && $row['for_supergroup'];
+      while (count($this->result) < $this->count - 1) {
+        $this->result[] = array();  // Empty slots for ties
+      }
+      $this->result[] = array($racerid);
+      $place = $this->count - 1;
     }
-    if ($ok) {
-      ++$so_far['count'];
-      if ($row['score'] <= $so_far['last_score']) {
-        // A tie!
-        $result[count($result) - 1][] = $row['racerid'];
-      } else {
-        while (count($result) < $so_far['count'] - 1) {
-          $result[] = array();  // Empty slots for ties
-        }
-        $result[] = array($row['racerid']);
-        $so_far['last_score'] = $row['score'];
+
+    $this->last_score = $score;
+    return $place;
+  }
+}
+
+// $finalized_only = true restricts the output to just those keys
+// (class/rank/supergroup) for which final standings are available.  That is,
+// standings that are yet to be settled, because there's more racing to do, will
+// be omitted.
+//
+// compute_all_standings returns two values:
+//
+// list($ladders, $parallel) = compute_all_standings($result_summary);
+//
+// $ladders maps keys to a ladder of finishers for a category, described above.
+//
+// $parallel is an array of entries matching each of the entries in
+// $result_summary.  Each entry in $parallel maps keys to a ladder index in the
+// ladder for the same key.
+function compute_all_standings($result_summary, $finalized_only = false) {
+  $inverted_constituents = inverted_constituents(true);
+
+  $final_rounds = final_roundids_for_all_classes();
+  $unfinished_rounds = unfinished_rounds();
+  $unfinished_classes = array();
+
+  if ($finalized_only) {
+    foreach ($unfinished_rounds as $roundid => $classid) {
+      $unfinished_classes[] = $classid;
+      if (isset($inverted_constituents[$classid])) {
+        $unfinished_classes = array_merge($unfinished_classes,
+                                          $inverted_constituents[$classid]);
       }
     }
   }
-  return $result;
+
+  $use_subgroups = read_raceinfo_boolean('use-subgroups');
+
+  $trackers = array();  // An array of key => StandingsTracker
+
+  $parallel = array();
+
+  // $p is a reference to an element of $parallel.
+  $f = function($key, $score, $racerid, &$p) use (&$trackers) {
+    if (!isset($trackers[$key])) {
+      $trackers[$key] = new StandingsTracker();
+    }
+    $place = $trackers[$key]->AddEntry($score, $racerid);
+    $p[$key] = $place;
+  };
+
+  foreach ($result_summary as &$row) {
+    $parallel[] = array();
+    $p = &$parallel[count($parallel) - 1];
+
+    $f('round'.$row['roundid'], $row['score'], $row['racerid'], $p);
+
+    if (!isset($unfinished_round[$row['roundid']])) {
+      if (in_array($row['roundid'], $final_rounds)) {
+        $f(standings_key_class($row['round_classid']), $row['score'], $row['racerid'], $p);
+        if ($use_subgroups) {
+          $f(standings_key_subgroup($row['rankid']), $row['score'], $row['racerid'], $p);
+        }
+
+        if (isset($inverted_constituents[$row['round_classid']])) {
+          foreach ($inverted_constituents[$row['round_classid']] as $agg_classid) {
+            if (!in_array($agg_classid, $unfinished_classes)) {
+              $key = $agg_classid < 0 ? 'supergroup' : standings_key_class($agg_classid);
+              $place = $f($key, $row['score'], $row['racerid'], $p);
+            }
+          }
+        }
+      } else {
+        if ($use_subgroups) {
+          // For non-final rounds, we can compute a standing for the racer
+          // within their subgroup within the current round only.
+          $f(standings_key_round_subgroup($row['roundid'], $row['rankid']),
+             $row['score'], $row['racerid'], $p);
+        }
+      }
+    }
+  }
+
+  $results = array();
+  foreach ($trackers as $key => &$tracker) {
+    $results[$key] = $tracker->result;
+  }
+  foreach ($parallel as &$p) {
+    foreach ($p as $key => &$place) {
+      if (count($results[$key][$place]) > 1) {
+        $place = 'T'.($place + 1);
+      } else {
+        $place = $place + 1;
+      }
+    }
+  }
+  return array($results, $parallel);
 }
 
+// If there's only one class, standings within that class are the same as
+// standings within the supergroup, and there's no real point in showing them.
 function show_group_standings() {
   return read_single_value('SELECT COUNT(*) FROM Classes') > 1;
 }
@@ -318,14 +457,17 @@ function write_standings_table_headers() {
     echo "<th>Car Name</th>";
   }
   if (show_group_standings()) {
-    echo "<th>".group_label()."</th>";
-    echo "<th class='ingroup'>In <span id='per-group-label'>".group_label()."</span></th>";
+    echo "<th class='group_column'>".group_label()."</th>";
+    echo "<th class='ingroup_column'>In <span id='per-group-label'>".group_label()."</span></th>";
   }
   if (read_raceinfo_boolean('use-subgroups')) {
-    echo "<th>".subgroup_label()."</th>";
-    echo "<th class='insubgroup'>In <span id='per-subgroup-label'>".subgroup_label()."</span></th>";
+    echo "<th class='subgroup_column'>".subgroup_label()."</th>";
+    echo "<th class='insubgroup_column'>In <span id='per-subgroup-label'>".subgroup_label()."</span></th>";
   }
-  echo "<th class='insuper'>In ".supergroup_label()."</th>";
+  if (has_supergroup_standings()) {
+    echo "<th class='insuper_column'>In ".supergroup_label()."</th>";
+  }
+  echo "<th class='inround_column'>In Round</th>";
 
   echo "<th>Heats</th>";
 
@@ -339,45 +481,67 @@ function write_standings_table_headers() {
   echo "</tr>\n";
 }
 
-function write_standings_table_rows(&$standings) {
-  $standings_by_racer = collect_standings($standings);
+function write_standings_table_rows(&$result_summary) {
   $name_style = read_raceinfo('name-style', FULL_NAME);
   $use_groups = show_group_standings();
   $use_subgroups = read_raceinfo_boolean('use-subgroups');
   $show_car_name = show_car_name_in_standings();
   $time_format = get_finishtime_formatting_string();
-  $first = true;
-  foreach ($standings as &$row) {
-    $racerid = $row['racerid'];
-    $roundid = $row['roundid'];
-    $classid = $row['classid'];
-    $rankid = $row['rankid'];
-    $this_racer_standings = $standings_by_racer[$racerid];
-    echo "<tr data-roundid='".$roundid."' data-rankid='".$row['rankid']."'"
-        ." data-for-supergroup='".$row['for_supergroup']."'"
-        .($first ? " data-first='1'" : "")
-        .">";
-    $first = false;
 
-    // Cells in the first column contain two separate <div>s, only one of which is
-    // made visible at any given time.  If we're displaying the standings for a
-    // single round, the first column gives the place within the round.  If we're
-    // displaying the standings within the supergroup ("All"), we display instead
-    // the racer's place within the pack (same as the "In Pack" column).
+  list($finishers, $parallel) = compute_all_standings($result_summary);
+  $i = 0;
+  foreach ($result_summary as &$row) {
+    $p = $parallel[$i];
+    ++$i;
+
+    $roundid = $row['roundid'];
+
+    // js/standings-kiosk.js looks for data-first attribute for scrolling.
+    echo "<tr data-roundid='".$roundid."' data-rankid='".$row['rankid']."'"
+        ." data-for-supergroup='".isset($p['supergroup'])."'"
+        .($i == 1 ? " data-first='1'" : "")
+        .">";
+
+    // First column:
     echo "<td>";
-    echo "<div class='inround'>";
     {
-      echo $this_racer_standings[$roundid];
+      // echo json_encode($p);  // DEBUG
+
+      echo "<div class='inround'>";
+      {
+        echo $p['round'.$roundid];
+      }
+      echo "</div>";
+
+      echo "<div class='insuper'>";
+      {
+        if (isset($p['supergroup'])) {
+          echo $p['supergroup'];
+        }
+      }
+      echo "</div>";
+
+      $classkey = standings_key_class($row['round_classid']);  // For round class
+      foreach ($p as $key => $place) {
+        if ($key != $classkey && is_standings_key_class($key)) {
+          echo "<div class='nonracing-class hidden' data-standings-key='$key' data-agg-classid='".parse_standings_key_class($key)."'>";
+          echo $p[$key];
+          echo "</div>";
+        }
+      }
+
+      if ($use_subgroups) {
+        foreach ($p as $key => $place) {
+          if (is_standings_key_round_subgroup($key)) {
+            echo "<div class='hidden' data-standings-key='$key'>";
+            echo $p[$key];
+            echo "</div>";
+          }
+        }
+      }
     }
-    echo "</div>";
-    echo "<div class='insuper'>";
-    {
-      if ($row['for_supergroup'] && isset($this_racer_standings['supergroup']))
-        echo $this_racer_standings['supergroup'];
-    }
-    echo "</div>";
     echo "</td>";
-  
+
     echo "<td>".$row['carnumber']."</td>";
     echo "<td>".htmlspecialchars(mangled_name($row, $name_style), ENT_QUOTES, 'UTF-8')."</td>";
     if ($show_car_name) {
@@ -386,30 +550,36 @@ function write_standings_table_rows(&$standings) {
 
     // Racer's (native) class and place in class/group
     if ($use_groups) {
-      echo "<td>".htmlspecialchars($row['class'], ENT_QUOTES, 'UTF-8')."</td>";
-      echo "<td class='ingroup'>";
-      if ($row['for_group'] && isset($this_racer_standings['c'.$classid]))
-        echo $this_racer_standings['c'.$classid];
+      $key = 'c'.$row['classid'];  // Racer's classid
+      echo "<td class='group_column'>".htmlspecialchars($row['class'], ENT_QUOTES, 'UTF-8')."</td>";
+      echo "<td class='ingroup_column'>";
+      if (isset($p[$key])) {
+        echo $p[$key];
+      }
       echo "</td>";
     }
 
     // Rank/subgroup and place in rank/subgroup
     if ($use_subgroups) {
-      echo "<td>".htmlspecialchars($row['rank'], ENT_QUOTES, 'UTF-8')."</td>";
-
-      echo "<td class='insubgroup'>";
-      if ($row['for_group'] && isset($this_racer_standings['r'.$rankid])) {
-        echo $this_racer_standings['r'.$rankid];
+      echo "<td class='subgroup_column'>".htmlspecialchars($row['rank'], ENT_QUOTES, 'UTF-8')."</td>";
+      $key = standings_key_subgroup($row['rankid']);
+      echo "<td class='insubgroup_column'>";
+      if (isset($p[$key])) {
+        echo $p[$key];
       }
       echo "</td>";
     }
 
     // Place in pack
-    echo "<td class='insuper'>";
-    if ($row['for_supergroup'] && isset($this_racer_standings['supergroup']))
-      echo $this_racer_standings['supergroup'];
-    echo "</td>";
-  
+    if (has_supergroup_standings()) {
+      echo "<td class='insuper_column'>";
+      if (isset($p['supergroup'])) {
+        echo $p['supergroup'];
+      }
+      echo "</td>";
+    }
+    echo "<td class='inround_column'>".$p['round'.$roundid]."</td>";
+
     echo "<td>".$row['base']."</td>";
 
     if (read_raceinfo_boolean('use-points')) {
@@ -429,48 +599,104 @@ function write_standings_table_rows(&$standings) {
   }
 }
 
-// Returns an array of {roundid, name} entries for each racing round.
+// Returns an array of entries, each with a 'kind' and 'key' value, plus other
+// values as follows:
 //
-// The 'name' for final round is just the class name; for non-final rounds, a ",
-// Round <n>" suffix is added.
-function rounds_for_standings($roundid = false) {
+// 'kind' = 'supergroup': key='supergroup', name
+// 'kind' = 'class', key='c'.classid, name, roundid, classid;
+// 'kind' = 'rank', key='r'.rankid, name, roundid, rankid
+// 'kind' = 'round', key='round'.roundid, name, roundid
+// 'kind' = 'agg-class', key='c'.classid, name, classid
+
+function standings_catalog() {
   global $db;
+  $use_subgroups = read_raceinfo_boolean('use-subgroups');
+
   $result = array();
-  $stmt = $db->query('SELECT class, round, R1.roundid, R1.classid,'
-                     .' (SELECT MAX(round) FROM Rounds R2 WHERE R2.classid = R1.classid) AS max_round'
-                     .' FROM Rounds R1'
-                     .' INNER JOIN Classes'
-                     .' ON R1.classid = Classes.classid'
-                     .($roundid ? ' WHERE R1.roundid = '.$roundid : '')
-                     .' ORDER BY '
-                     .(schema_version() >= 2 ? 'Classes.sortorder, ' : '')
-                     .'class, round DESC');
+  $stmt = $db->query('SELECT roundid, classid, round'
+                     .' FROM Rounds'
+                     .' ORDER BY round DESC');
+  $rounds_by_class = array();
   foreach ($stmt as $row) {
-    $t = $row['class'];
-    if ($row['round'] < $row['max_round']) {
-      $t .= ', Round '.$row['round'];
+    $classid = $row['classid'];
+    if (!isset($rounds_by_class[$classid])) {
+      $rounds_by_class[$classid] = array();
     }
-    $result[] = array('roundid' => $row['roundid'],
-                      'name' => $t);
+    $rounds_by_class[$classid][] = array('roundid' => $row['roundid'],
+                                         'round' => $row['round']);
   }
 
-  foreach ($result as &$round) {
-    $sort = (schema_version() >= 2 ? 'Ranks.sortorder, ' : '').'rank';
-    $stmt = $db->prepare('SELECT DISTINCT Ranks.rankid, '.$sort
-                         .' FROM '.inner_join('RaceChart', 'RegistrationInfo',
-                                              'RaceChart.racerid = RegistrationInfo.racerid',
-                                              'Ranks', 'RegistrationInfo.rankid = Ranks.rankid')
-                         .' WHERE roundid = :roundid'
-                         .' ORDER BY '.$sort);
-    $stmt->execute(array(':roundid' => $round['roundid']));
-    $round['ranks'] = array();
-    foreach ($stmt as $rank) {
-      $round['ranks'][] = array('rankid' => $rank['rankid'],
-                                'name' => $rank['rank']);
-    }
+  $catalog = array();
+  list($classes, $classseq, $ranks, $rankseq) = classes_and_ranks();
+
+  if (has_supergroup_standings()) {
+    $catalog[] = array('kind' => 'supergroup',
+                       'key' => 'supergroup',
+                       'name' => supergroup_label());
   }
 
-  return $result;
+  $rankseq_index = 0;
+  foreach ($classseq as $classid) {
+    $cl = $classes[$classid];
+    if (isset($rounds_by_class[$classid])) {
+      $rounds = $rounds_by_class[$classid];
+      if (count($rounds) == 0) continue;  // this would be a bug
+      // The final round for a class is listed first
+      $final_round = array_shift($rounds);
+      if (show_group_standings()) {
+        $catalog[] = array('kind' => 'class',
+                           'key' => standings_key_class($classid),
+                           'name' => $cl['class'],
+                           'classid' => $classid,
+                           'roundid' => $final_round['roundid']);
+      }
+      if ($use_subgroups) {
+        for (; $rankseq_index < count($rankseq); ++$rankseq_index) {
+          $rank = $ranks[$rankseq[$rankseq_index]];
+          if ($rank['classid'] != $classid) {
+            break;
+          }
+          $catalog[] = array('kind' => 'rank',
+                             'key' => standings_key_subgroup($rank['rankid']),
+                             'name' => $cl['class'].' / '.$rank['rank'],
+                             'roundid' => $final_round['roundid'],
+                             'rankid' => $rankseq[$rankseq_index]);
+        }
+      }
+
+      // Loop through the non-final rounds for the class
+      foreach ($rounds as $round) {
+        if (show_group_standings()) {
+          $round_name =  $cl['class'].', Round '.$round['round'];
+        } else {
+          $round_name = 'Round '.$round['round'];
+        }
+        $catalog[] = array('kind' => 'round',
+                           'key' => 'round'.$round['roundid'],
+                           'name' => $round_name,
+                           'roundid' => $round['roundid']);
+        if ($use_subgroups) {
+          foreach ($rankseq as $rankid) {
+            $rank = $ranks[$rankid];
+            if ($rank['classid'] == $classid) {
+              $catalog[] = array('kind' => 'rank-round',
+                                 'key' => standings_key_round_subgroup(
+                                   $round['roundid'], $rank['rankid']),
+                                 'name' => $round_name.' / '.$rank['rank'],
+                                 'roundid' => $round['roundid'],
+                                 'rankid' => $rankid);
+            }
+          }
+        }
+      }
+    } else {
+      // Nonracing aggregate class
+      $catalog[] = array('kind' => 'agg-class',
+                         'key' => standings_key_class($classid),
+                         'name' => $cl['class'],
+                         'classid' => $classid);
+    }
+  }
+  return $catalog;
 }
-
 ?>

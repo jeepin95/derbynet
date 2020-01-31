@@ -1,6 +1,7 @@
 <?php @session_start();
 // Add, edit, reorder, and assign awards
 require_once('inc/data.inc');
+require_once('inc/classes.inc');
 require_once('inc/banner.inc');
 require_once('inc/authorize.inc');
 require_once('inc/schema_version.inc');
@@ -13,6 +14,7 @@ require_permission(EDIT_AWARDS_PERMISSION);
 <title>Awards Editor</title>
 <?php require('inc/stylesheet.inc'); ?>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/jquery-ui-1.10.4.min.js"></script>
 <script type="text/javascript" src="js/jquery.ui.touch-punch.min.js"></script>
 <script type="text/javascript" src="js/dashboard-ajax.js"></script>

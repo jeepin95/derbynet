@@ -73,6 +73,9 @@ run_tests() {
     `dirname $0`/test-photo-upload.sh "$BASE_URL"
     `dirname $0`/test-each-role.sh "$BASE_URL"
 
+    `dirname $0`/test-aggregate-rounds.sh "$BASE_URL"
+    `dirname $0`/test-aggregate-classes.sh "$BASE_URL"
+
 ############################## Snapshot Export and Import ##############################
     `dirname $0`/reset-database.sh "$BASE_URL"
     `dirname $0`/import-roster.sh "$BASE_URL"
@@ -111,16 +114,6 @@ elif [ "$DBTYPE" == "sqlite" ] ; then
         "action=setup.nodata&connection_string=sqlite:$DBPATH&dbuser=&dbpass=" \
         | check_success
     run_tests
-elif [ "$DBTYPE" == "mysql" ] ; then
-    echo DbType
-    DBNAME=${1:-trial3}
-    DBUSER=${2:-$DBNAME}
-    DBPASS=${3:-}
-    prepare_for_setup
-    curl_post action.php \
-              "action=setup.nodata&connection_string=mysql:host=localhost;dbname=$DBNAME&dbuser=$DBUSER&dbpass=$DBPASS" \
-        | check_success
-    run_tests
 elif [ "$DBTYPE" == "access" ] ; then
     prepare_for_setup
     curl_post action.php \
@@ -139,7 +132,7 @@ elif [ "$DBTYPE" == "access" ] ; then
 else
     tput setaf 1  # red text
     echo Unrecognized database type: $DBTYPE
-    echo Known types are: sqlite mysql access
+    echo Known types are: sqlite access
     tput setaf 0  # black text
     exit 1
 fi

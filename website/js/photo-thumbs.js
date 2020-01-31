@@ -228,6 +228,22 @@ function rotatePhoto(angle) {
          });
 }
 
+function on_delete_photo_button() {
+  var photo_data = $("#work_image").data('photo');
+  show_secondary_modal("#delete_confirmation_modal", function(event) {
+    close_secondary_modal("#delete_confirmation_modal");
+    $.ajax(g_action_url,
+           {type: 'POST',
+            data: {action: 'photo.delete',
+                   repo: photo_data.repo,
+                   photo: photo_data.basename},
+            success: function (data) {
+              location.reload(true);
+            }});
+    close_modal('#photo_crop_modal');
+  });
+}
+
 
 // For #upload-target div:
 Dropzone.options.uploadTarget = {
@@ -255,9 +271,11 @@ Dropzone.options.uploadTarget = {
                                 '<img class="unassigned-photo"/>' +
                                 '</div>');
               new_thumb.find('img')
-                  .attr('data-image-filename', uploaded)
-                  .attr('src', thumb)
-                  .on('click', function() { photo_crop_expression(uploaded); });
+                .attr('data-image-filename', uploaded)
+                .attr('src', thumb)
+                .attr('onclick', 'showPhotoCropModal(this, ' +
+                                      '\'' + g_photo_repo_name + '\', ' +
+                                      '\'' + uploaded + '\', 0)');
               new_thumb.insertBefore($(this).parent());
               make_draggable_photo(new_thumb.find('img'));
               return false;  // exit the loop

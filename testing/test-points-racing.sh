@@ -65,25 +65,23 @@ curl_get "action.php?query=poll.ondeck" | grep 'resultid="4"' | expect_one 'resu
 #
 # These are a little fragile in that they depend on each table row comprising
 # exactly one line of text
-curl_text "standings.php" | grep Carroll | expect_one "<td class=.insuper.>1</td>"
-curl_text "standings.php" | grep Asher   | expect_one "<td class=.insuper.>2</td>"
-curl_text "standings.php" | grep Derick  | expect_one "<td class=.insuper.>T3</td>"
-curl_text "standings.php" | grep Jesse   | expect_one "<td class=.insuper.>T3</td>"
-curl_text "standings.php" | grep Felton  | expect_one "<td class=.insuper.>5</td>"
+curl_text "standings.php" | grep Carroll | expect_one "<td class=.insuper_column.>1</td>"
+curl_text "standings.php" | grep Asher   | expect_one "<td class=.insuper_column.>2</td>"
+curl_text "standings.php" | grep Derick  | expect_one "<td class=.insuper_column.>T3</td>"
+curl_text "standings.php" | grep Jesse   | expect_one "<td class=.insuper_column.>T3</td>"
+curl_text "standings.php" | grep Felton  | expect_one "<td class=.insuper_column.>5</td>"
 
-curl_text "export-standings.php" | head -n 2 | tail -n 1 | \
-    expect_eq '"Place","Car Number","Name","Car Name","Den","In Den","Heats","Total Points (1st = 4)","Best","Worst"'
 
-curl_text "export-standings.php" | head -n 3 | tail -n 1 | \
-    expect_eq '1,111,"Carroll Cybulski",Vroom,"Lions & Tigers",1,4,16,1st,1st'
-curl_text "export-standings.php" | head -n 4 | tail -n 1 | \
-    expect_eq '2,101,"Adolfo ""Dolf"" Asher",,"Lions & Tigers",2,4,12,1st,3rd'
-curl_text "export-standings.php" | head -n 5 | tail -n 1 | \
-    expect_eq 'T3,121,"Derick Dreier",,"Lions & Tigers",T3,4,9,2nd,3rd'
-curl_text "export-standings.php" | head -n 6 | tail -n 1 | \
-    expect_eq 'T3,141,"Jesse Jara",,"Lions & Tigers",T3,4,9,2nd,4th'
-curl_text "export-standings.php"  | tail -n 1 | \
-    expect_eq '5,131,"Felton Fouche",,"Lions & Tigers",5,4,4,4th,4th'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '[1,"111","Carroll Cybulski","Vroom","Lions \u0026 Tigers",1,"4","16","1st","1st"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '[2,"101","Adolfo \"Dolf\" Asher","","Lions \u0026 Tigers",2,"4","12","1st","3rd"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T3","121","Derick Dreier","","Lions \u0026 Tigers","T3","4","9","2nd","3rd"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T3","141","Jesse Jara","","Lions \u0026 Tigers","T3","4","9","2nd","4th"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '[5,"131","Felton Fouche","","Lions \u0026 Tigers",5,"4","4","4th","4th"]'
 
 # award presentation when there's a tie for 3rd
 curl_post action.php "action=award.present&key=speed-3a-1" | check_success
@@ -120,7 +118,7 @@ run_heat_place 6 4   1 2 3 4
 
 # Usage: curl_text standings.php | for_roundid 1 | ...
 function for_roundid() {
-    grep "<tr data-roundid=.$1. "
+    grep "<tr.* data-roundid=.$1. "
 }
 
 ROUND1_TMP=`mktemp`
@@ -130,49 +128,46 @@ cat $ROUND1_TMP | expect_count '<tr ' 5
 
 cat $ROUND1_TMP | expect_one Carroll
 cat $ROUND1_TMP | grep Carroll | expect_one "<div class=.inround.>1</div>"
-cat $ROUND1_TMP | grep Carroll | expect_one "<td class=.ingroup.></td>"
+cat $ROUND1_TMP | grep Carroll | expect_one "<td class=.ingroup_column.></td>"
 cat $ROUND1_TMP | grep Carroll | expect_one "<div class=.insuper.></div>"
-cat $ROUND1_TMP | grep Carroll | expect_one "<td class=.insuper.></td>"
+cat $ROUND1_TMP | grep Carroll | expect_one "<td class=.insuper_column.></td>"
 
 cat $ROUND1_TMP | expect_one Asher
 cat $ROUND1_TMP | grep Asher | expect_one "<div class=.inround.>2</div>"
-cat $ROUND1_TMP | grep Asher | expect_one "<td class=.ingroup.></td>"
+cat $ROUND1_TMP | grep Asher | expect_one "<td class=.ingroup_column.></td>"
 cat $ROUND1_TMP | grep Asher | expect_one "<div class=.insuper.></div>"
-cat $ROUND1_TMP | grep Asher | expect_one "<td class=.insuper.></td>"
+cat $ROUND1_TMP | grep Asher | expect_one "<td class=.insuper_column.></td>"
 
 cat $ROUND1_TMP | expect_one Derick
 cat $ROUND1_TMP | grep Derick | expect_one "<div class=.inround.>T3</div>"
-cat $ROUND1_TMP | grep Derick | expect_one "<td class=.ingroup.></td>"
+cat $ROUND1_TMP | grep Derick | expect_one "<td class=.ingroup_column.></td>"
 cat $ROUND1_TMP | grep Derick | expect_one "<div class=.insuper.></div>"
-cat $ROUND1_TMP | grep Derick | expect_one "<td class=.insuper.></td>"
+cat $ROUND1_TMP | grep Derick | expect_one "<td class=.insuper_column.></td>"
 
 cat $ROUND1_TMP | expect_one Jesse
 cat $ROUND1_TMP | grep Jesse | expect_one "<div class=.inround.>T3</div>"
-cat $ROUND1_TMP | grep Jesse | expect_one "<td class=.ingroup.></td>"
+cat $ROUND1_TMP | grep Jesse | expect_one "<td class=.ingroup_column.></td>"
 cat $ROUND1_TMP | grep Jesse | expect_one "<div class=.insuper.></div>"
-cat $ROUND1_TMP | grep Jesse | expect_one "<td class=.insuper.></td>"
+cat $ROUND1_TMP | grep Jesse | expect_one "<td class=.insuper_column.></td>"
 
 cat $ROUND1_TMP | expect_one Felton
 cat $ROUND1_TMP | grep Felton | expect_one "<div class=.inround.>5</div>"
-cat $ROUND1_TMP | grep Felton | expect_one "<td class=.ingroup.></td>"
+cat $ROUND1_TMP | grep Felton | expect_one "<td class=.ingroup_column.></td>"
 cat $ROUND1_TMP | grep Felton | expect_one "<div class=.insuper.></div>"
-cat $ROUND1_TMP | grep Felton | expect_one "<td class=.insuper.></td>"
+cat $ROUND1_TMP | grep Felton | expect_one "<td class=.insuper_column.></td>"
 
 rm $ROUND1_TMP
 
-curl_text "export-standings.php?roundid=1" | head -n 2 | tail -n 1 | \
-    expect_eq '"Place","Car Number","Name","Car Name","Den","In Den","In Pack","Heats","Total Points (1st = 4)","Best","Worst"'
-
-curl_text "export-standings.php?roundid=1" | head -n 3 | tail -n 1 | \
-    expect_eq '1,111,"Carroll Cybulski",Vroom,"Lions & Tigers",,,4,16,1st,1st'
-curl_text "export-standings.php?roundid=1" | head -n 4 | tail -n 1 | \
-    expect_eq '2,101,"Adolfo ""Dolf"" Asher",,"Lions & Tigers",,,4,12,1st,3rd'
-curl_text "export-standings.php?roundid=1" | head -n 5 | tail -n 1 | \
-    expect_eq 'T3,121,"Derick Dreier",,"Lions & Tigers",,,4,9,2nd,3rd'
-curl_text "export-standings.php?roundid=1" | head -n 6 | tail -n 1 | \
-    expect_eq 'T3,141,"Jesse Jara",,"Lions & Tigers",,,4,9,2nd,4th'
-curl_text "export-standings.php?roundid=1"  | tail -n 1 | \
-    expect_eq '5,131,"Felton Fouche",,"Lions & Tigers",,,4,4,4th,4th'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '[1,"111","Carroll Cybulski","Vroom","Lions \u0026 Tigers",1,1,"4","16","1st","1st"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '[2,"101","Adolfo \"Dolf\" Asher","","Lions \u0026 Tigers",2,2,"4","12","1st","3rd"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T3","121","Derick Dreier","","Lions \u0026 Tigers","T3","T3","4","9","2nd","3rd"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T3","141","Jesse Jara","","Lions \u0026 Tigers","T3","T3","4","9","2nd","4th"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '[5,"131","Felton Fouche","","Lions \u0026 Tigers",5,5,"4","4","4th","4th"]'
 
 ROUND6_TMP=`mktemp`
 curl_text "standings.php" | for_roundid 6 > $ROUND6_TMP
@@ -181,36 +176,35 @@ cat $ROUND6_TMP | expect_count '<tr ' 4
 
 cat $ROUND6_TMP | expect_one Asher
 cat $ROUND6_TMP | grep Asher | expect_one "<div class=.inround.>T1</div>"
-cat $ROUND6_TMP | grep Asher | expect_one "<td class=.ingroup.>T1</td>"
+cat $ROUND6_TMP | grep Asher | expect_one "<td class=.ingroup_column.>T1</td>"
 cat $ROUND6_TMP | grep Asher | expect_one "<div class=.insuper.>T1</div>"
-cat $ROUND6_TMP | grep Asher | expect_one "<td class=.insuper.>T1</td>"
+cat $ROUND6_TMP | grep Asher | expect_one "<td class=.insuper_column.>T1</td>"
 
 cat $ROUND6_TMP | expect_one Jesse
 cat $ROUND6_TMP | grep Jesse | expect_one "<div class=.inround.>T1</div>"
-cat $ROUND6_TMP | grep Jesse | expect_one "<td class=.ingroup.>T1</td>"
+cat $ROUND6_TMP | grep Jesse | expect_one "<td class=.ingroup_column.>T1</td>"
 cat $ROUND6_TMP | grep Jesse | expect_one "<div class=.insuper.>T1</div>"
-cat $ROUND6_TMP | grep Jesse | expect_one "<td class=.insuper.>T1</td>"
+cat $ROUND6_TMP | grep Jesse | expect_one "<td class=.insuper_column.>T1</td>"
 
 cat $ROUND6_TMP | expect_one Carroll
 cat $ROUND6_TMP | grep Carroll | expect_one "<div class=.inround.>T3</div>"
-cat $ROUND6_TMP | grep Carroll | expect_one "<td class=.ingroup.>T3</td>"
+cat $ROUND6_TMP | grep Carroll | expect_one "<td class=.ingroup_column.>T3</td>"
 cat $ROUND6_TMP | grep Carroll | expect_one "<div class=.insuper.>T3</div>"
-cat $ROUND6_TMP | grep Carroll | expect_one "<td class=.insuper.>T3</td>"
+cat $ROUND6_TMP | grep Carroll | expect_one "<td class=.insuper_column.>T3</td>"
 
 cat $ROUND6_TMP | expect_one Derick
 cat $ROUND6_TMP | grep Derick | expect_one "<div class=.inround.>T3</div>"
-cat $ROUND6_TMP | grep Derick | expect_one "<td class=.ingroup.>T3</td>"
+cat $ROUND6_TMP | grep Derick | expect_one "<td class=.ingroup_column.>T3</td>"
 cat $ROUND6_TMP | grep Derick | expect_one "<div class=.insuper.>T3</div>"
-cat $ROUND6_TMP | grep Derick | expect_one "<td class=.insuper.>T3</td>"
+cat $ROUND6_TMP | grep Derick | expect_one "<td class=.insuper_column.>T3</td>"
 
 rm $ROUND6_TMP
 
-
-curl_text "export-standings.php?roundid=6" | head -n 3 | tail -n 1 | \
-    expect_eq 'T1,101,"Adolfo ""Dolf"" Asher",,"Lions & Tigers",T1,T1,4,12,1st,3rd'
-curl_text "export-standings.php?roundid=6" | head -n 4 | tail -n 1 | \
-    expect_eq 'T1,141,"Jesse Jara",,"Lions & Tigers",T1,T1,4,12,1st,3rd'
-curl_text "export-standings.php?roundid=6" | head -n 5 | tail -n 1 | \
-    expect_eq 'T3,111,"Carroll Cybulski",Vroom,"Lions & Tigers",T3,T3,4,8,2nd,4th'
-curl_text "export-standings.php?roundid=6" | tail -n 1 | \
-    expect_eq 'T3,121,"Derick Dreier",,"Lions & Tigers",T3,T3,4,8,2nd,4th'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T1","101","Adolfo \"Dolf\" Asher","","Lions \u0026 Tigers","T1","4","12","1st","3rd"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T1","141","Jesse Jara","","Lions \u0026 Tigers","T1","4","12","1st","3rd"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T3","111","Carroll Cybulski","Vroom","Lions \u0026 Tigers","T3","4","8","2nd","4th"]'
+curl_text "export.php" | sed -n -e '/START_JSON/,/END_JSON/ p' | tail -2 | head -1 | \
+    expect_one '["T3","121","Derick Dreier","","Lions \u0026 Tigers","T3","4","8","2nd","4th"]'

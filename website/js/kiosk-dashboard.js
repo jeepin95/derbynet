@@ -67,6 +67,24 @@ var g_kiosk_page_handlers = {
       configure_title_and_class_ids(kiosk, kiosk_select);
     }
   },
+  'kiosks/award-presentations.kiosk': {
+    configure: function(kiosk, kiosk_select) {
+      let k_id = 'k-' + kiosk.address.replace(/[:+]/g, '_');
+      if (!kiosk.parameters.hasOwnProperty('confetti')) {
+        kiosk.parameters.confetti = true;
+      }
+      $('<input type="checkbox" id="' + k_id + '" />')
+        .prop('checked',  kiosk.parameters.confetti)
+        .on("change", /*selector*/null, /*data*/kiosk,
+            /*handler*/function (event) {
+              var checked = $(event.target).is(':checked');
+              var kiosk = event.data;  // {name:, address:, assigned_page:, parameters: }
+              post_new_params(kiosk, {confetti: checked});
+            })
+        .appendTo(kiosk_select);
+      $('<label for="' + k_id + '">Confetti</label>').appendTo(kiosk_select);
+    }
+  },
 };
 
 // Configuration function for parameters of {classids: [...]}
@@ -296,7 +314,7 @@ function process_standings_reveal_result(data) {
 
 $(function () {
   // TODO Disable buttons if there's no current roundid selection.
-  $("select").on("change", function(event) {
+  $("select#standings-catalog").on("change", function(event) {
     // The initial prompt, if present, is shown as a disabled option which
     // we can now remove.
     $(this).find("option:disabled").remove();
@@ -305,8 +323,7 @@ $(function () {
            {type: 'POST',
             data: {
               action: 'standings.reveal',
-              roundid: selection.attr('data-roundid'),
-              rankid: selection.attr('data-rankid'),
+              'catalog-entry': selection.attr('data-catalog-entry')
             },
             success: function(data) {
               process_standings_reveal_result(data);
@@ -321,8 +338,8 @@ function handle_reveal1() {
             action: 'standings.reveal',
             expose: '+1'
             },
-            success: function(data) {
-              process_standings_reveal_result(data);
+          success: function(data) {
+            process_standings_reveal_result(data);
           }});
 }
 
@@ -333,8 +350,8 @@ function handle_reveal_all() {
             action: 'standings.reveal',
             expose: 'all'
             },
-            success: function(data) {
-              process_standings_reveal_result(data);
+          success: function(data) {
+            process_standings_reveal_result(data);
           }});
 }
 
@@ -399,7 +416,6 @@ function compute_classids() {
 }
 
 function post_new_params(kiosk, new_params) {
-  console.log("post_new_params: new_params = " + JSON.stringify(new_params));  // TODO
   $.ajax(g_action_url,
          {type: 'POST',
           data: {action: 'kiosk.assign',

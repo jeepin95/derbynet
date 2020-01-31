@@ -50,7 +50,7 @@ EOF
 # Default browser; last one wins
 BROWSER=epiphany
 test -x /usr/bin/midori && BROWSER=midori
-test -x /usr/bin/chromium && BROWSER=/chromium
+test -x /usr/bin/chromium && BROWSER=chromium
 test -x /usr/bin/chromium-browser && BROWSER=chromium-browser
 
 test -f /etc/derbynet.conf  && . /etc/derbynet.conf
@@ -82,7 +82,9 @@ while [ $CONTACT_OK -eq 0 ]; do
 
 
 EOF
-    curl --connect-timeout 6 --location --silent "$DERBYNET_SERVER/index.php" > /dev/null && CONTACT_OK=1
+    curl --insecure --connect-timeout 6 --location --silent \
+         "$DERBYNET_SERVER/index.php" > /dev/null && \
+        CONTACT_OK=1
 done
 
 # While loop allows recovery from browser crashes

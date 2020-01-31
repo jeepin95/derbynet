@@ -17,6 +17,43 @@ function close_edit_all_classes_modal() {
 
 function show_add_class_modal() {
   $("#add_class_modal input[name='name']").val("");
+  $("#add_class_modal").removeClass("wide_modal");
+  $("#aggregate-only").addClass("hidden");
+  $("#add_class_modal input[type='submit']").prop('disabled', false);
+
+  show_secondary_modal("#add_class_modal", function () {
+    close_add_class_modal();
+    $.ajax(g_action_url,
+           {type: 'POST',
+            data: $('#add_class_modal form input').not('#aggregate-constituents input').serialize(),
+            success: function (data) {
+              reload_class_list();
+            }});
+
+    return false;
+  });
+}
+
+// Don't allow creating an aggregate class when there are fewer than two
+// constituents selected.  This gets attached as an on('changed') function to
+// each of the checkboxes for constituents.
+function maybe_enable_aggregate_create() {
+  $("#add_class_modal input[type='submit']")
+    .prop('disabled',
+          $("#aggregate-constituents input[type='checkbox']:checked").length < 2);
+}
+
+function show_add_aggregate_modal() {
+  $("#add_class_modal input[name='name']").val("");
+  $("#add_class_modal").addClass("wide_modal");
+  $("#aggregate-only").removeClass("hidden");
+
+  $("#aggregate-constituents input[type='checkbox']")
+    .prop('checked', false)
+    .flipswitch('refresh');
+
+  maybe_enable_aggregate_create();
+
   show_secondary_modal("#add_class_modal", function () {
     close_add_class_modal();
     $.ajax(g_action_url,
@@ -50,6 +87,16 @@ function edit_one_class(who) {
   
   $("#edit_class_name").val(list_item.find('.class-name').text());
   $("#edit_class_name").attr('data-classid', classid);
+  var ntrophies = list_item.attr('data-ntrophies');
+  $("#edit_class_ntrophies option").prop('selected', false);
+  if (ntrophies < 0) {
+    $("#edit_class_ntrophies option[value='-1']").prop('selected', true)
+  } else {
+    $('#edit_class_ntrophies option')
+      .filter(function () { return $(this).text() == ntrophies; })
+      .prop('selected', true);
+  }
+  $('#edit_class_ntrophies').selectmenu('refresh')
 
   hide_ranks_except(classid);
 
@@ -61,7 +108,13 @@ function edit_one_class(who) {
   $("#completed_rounds_extension").toggleClass('hidden', !(count == 0 && nrounds != 0));
   $("#completed_rounds_count").text(nrounds);
 
-  $("#delete_class_extension").toggleClass('hidden', !(count == 0 && nrounds == 0));
+  var constituent_of = list_item.attr('data-constituent-of');
+  console.log(list_item.find('.class-name').text() + ': constituent-of ' + constituent_of);
+  $("#constituent_extension").toggleClass('hidden', constituent_of == '');
+  $("#constituent_owner").text(constituent_of);
+
+  // TODO Don't allow a class deletion if an aggregate class depends on the class.
+  $("#delete_class_extension").toggleClass('hidden', !(count == 0 && nrounds == 0 && constituent_of == ''));
   show_edit_one_class_modal(list_item);
 }
 
@@ -71,7 +124,8 @@ function show_edit_one_class_modal(list_item) {
                {type: 'POST',
                 data: {action: 'class.edit',
                        classid: list_item.attr('data-classid'),
-                       name: $("#edit_class_name").val()},
+                       name: $("#edit_class_name").val(),
+                       ntrophies: $("#edit_class_ntrophies").val()},
                 success: function () {
                     reload_class_list();
                 }});
@@ -227,13 +281,16 @@ function repopulate_class_list(data) {
   if (classes.length > 0) {
     $("#ranks_container").empty();
     $("#groups").empty();
+    $("#aggregate-constituents").empty();
     for (var i = 0; i < classes.length; ++i) {
       var cl = classes[i];
 
       var group_li = $("<li class='ui-li-has-alt'"
                        + " data-classid='" + cl.getAttribute('classid') + "'"
+                       + " data-ntrophies='" + cl.getAttribute('ntrophies') + "'"
                        + " data-count='" + cl.getAttribute('count') + "'"
                        + " data-nrounds='" + cl.getAttribute('nrounds') + "'"
+                       + " data-constituent-of=''"  // Possibly rewritten below
                        + ">"
                        + "<p></p>"
                        + "<a class='ui-btn ui-btn-icon-notext ui-icon-gear' onclick='edit_one_class(this);'></a>"
@@ -244,6 +301,39 @@ function repopulate_class_list(data) {
 
       if (use_subgroups()) {
         populate_rank_list(cl);
+      }
+      var constituents = cl.getElementsByTagName('constituent');
+      if (constituents.length > 0) {
+        var constituents_ul = $('<ul data-role="listview" data-inset="true"></ul>').appendTo(group_li);
+        for (var ii = 0; ii < constituents.length; ++ii) {
+          $('<li></li>').text(constituents[ii].getAttribute('name')).appendTo(constituents_ul);
+        }
+      }
+
+      // For the Create Aggregate modal, add a flipswitch for each existing
+      // class to the list of potential constituents.
+      var flipswitch_div = $('<div class="flipswitch-div"></div>');
+      var label = $('<label for="constituent_' + cl.getAttribute('classid') + '"'
+                    + ' class="constituent-label"'
+                    + '></label>');
+      label.text(cl.getAttribute('name'));
+      flipswitch_div.append(label);
+      flipswitch_div.append(wrap_flipswitch($('<input type="checkbox"'
+                                              + ' id="constituent_' + cl.getAttribute('classid') + '"'
+                                              + ' name="constituent_' + cl.getAttribute('classid') + '"'
+                                              + '/>')));
+      $("#aggregate-constituents").append(flipswitch_div);
+    }
+    $("#aggregate-constituents input[type='checkbox']").on('change', maybe_enable_aggregate_create);
+    $("#aggregate-constituents").trigger("create");
+
+    // Mark up constituents so they can't be deleted
+    for (var i = 0; i < classes.length; ++i) {
+      var cl = classes[i];
+      var constituents = cl.getElementsByTagName('constituent');
+      for (var ii = 0; ii < constituents.length; ++ii) {
+        $("#groups li[data-classid=" + constituents[ii].getAttribute('classid') + "]")
+          .attr('data-constituent-of', cl.getAttribute('name'));
       }
     }
   }

@@ -83,6 +83,9 @@ g_new_round_modal_open = false;
 // the new_round_modal dialogs.
 g_completed_rounds = [];
 
+// Roundids of an aggregate rounds
+g_aggregate_rounds = [];
+
 // Controls for current racing group:
 
 function handle_isracing_change(event, scripted) {
@@ -322,6 +325,15 @@ function show_new_round_modal(roundid) {
     $(".single_den_only").removeClass("hidden");
     $("#new_round_modal").removeClass("wide_modal");
     $("#new_round_modal #new_round_roundid").val(roundid);
+    // For a single-round follow-on round, #bucketed flipswitch won't even be
+    // present unless we're using subgroups.
+    let bucketed = $("#new_round_modal #bucketed_single");
+    if (bucketed) {
+      bucketed.prop('checked', false)
+        .trigger("change", true)
+        .toggleClass('hidden', g_aggregate_rounds.includes(roundid));
+    }
+
     show_modal("#new_round_modal", function(event) {
         handle_new_round_submit();
         return false;
@@ -333,28 +345,29 @@ function handle_new_round_submit(roundid) {
     $.ajax(g_action_url,
            {type: 'POST',
             data: $("#new_round_modal form").serialize(),
-            success: function(data) { process_coordinator_poll_response(data); }
+            success: function(data) {
+              process_coordinator_poll_response(data); }
            });
 }
 
-function handle_grand_final_chosen() {
+function handle_aggregate_chosen() {
     close_modal_leave_background("#choose_new_round_modal");
-    show_grand_final_modal();
+    show_aggregate_modal();
 }
 
-function show_grand_final_modal() {
+function show_aggregate_modal() {
     $(".multi_den_only").removeClass("hidden");
     $(".single_den_only").addClass("hidden");
     $("#new_round_modal").addClass("wide_modal");
     // Have to suspend updates to this dialog while it's open
     g_new_round_modal_open = true;
     show_modal("#new_round_modal", function(event) {
-        handle_grand_final_submit();
+        handle_aggregate_submit();
         return false;
     });
 }
 
-function handle_grand_final_submit() {
+function handle_aggregate_submit() {
     g_new_round_modal_open = false;
     close_modal("#new_round_modal");
 
@@ -417,6 +430,7 @@ function parse_rounds(data) {
         rounds[i] = {roundid: 1*round_xml.getAttribute('roundid'),
                      classid: 1*round_xml.getAttribute('classid'),
                      classname: round_xml.getAttribute('class'),
+                     aggregate: round_xml.hasAttribute('aggregate'),
                      round: 1*round_xml.getAttribute('round'),
                      roster_size: 1*round_xml.getAttribute('roster_size'),
                      racers_passed: 1*round_xml.getAttribute('passed'),
@@ -611,7 +625,6 @@ function generate_scheduling_control_group(round, current, timer_state) {
 // Injects new values into an existing scheduling control group.  The
 // available control buttons get rewritten entirely.
 function inject_into_scheduling_control_group(round, current, timer_state) {
-  console.log("inject_into_scheduling_control_group()"); console.log(round);  // TODO
   var control_group = $("[data-roundid=" + round.roundid + "]");
 
   inject_progress_text(control_group, round);
@@ -652,7 +665,7 @@ function inject_into_scheduling_control_group(round, current, timer_state) {
     }
 
     if (round.heats_scheduled == 0 && round.heats_run == 0 &&
-        (round.round > 1 || round.classname == "Grand Finals")) {
+        (round.round > 1 || round.aggregate)) {
       buttons.append('<input type="button" data-enhanced="true"'
                      + ' onclick="handle_delete_round_button(' + round.roundid
                      + ', \'' + round.classname.replace(/"/g, '&quot;').replace(/'/, "\\'") + '\', '
@@ -678,7 +691,7 @@ function inject_into_scheduling_control_group(round, current, timer_state) {
                        + ' value="Purge Results"/>');
     }
 
-    // TODO: AND there isn't already a next round or grand finals with
+    // TODO: AND there isn't already a next round or aggregate round with
     // finishtimes...
     // TODO: Un-generate a round?  GPRM allows deleting rounds, but
     // apparently not the first round.
@@ -749,77 +762,63 @@ function calculate_totals(rounds) {
 }
 
 function populate_new_round_modals() {
-    var completed_rounds = g_completed_rounds.slice(0);  // Copy the array
+  var completed_rounds = g_completed_rounds.slice(0);  // Copy the array
 
-    var add_grand_finals = completed_rounds.length > 1;
-    var modal = $("#choose_new_round_modal");
-    modal.empty();
-    var multi_flipswitches = $("#multi_flipswitches");
-    multi_flipswitches.empty();
-    while (completed_rounds.length > 0) {
-        var roundno = completed_rounds[0].round;
-        modal.append('<h3>Add Round ' + (roundno + 1) + '</h3>');
-        var i = 0;
-        while (i < completed_rounds.length) {
-            if (completed_rounds[i].round == roundno) {
-                var round = completed_rounds[i];
-                var button = $('<input type="button" data-enhanced="true"/>');
-                button.prop('value', round.classname);
-                // Although syntactically it looks like a new round variable is created
-                // each time through the loop, it's actually just one variable that's
-                // reused/assigned each time.  Capturing that reused variable in the on-click
-                // function won't work, so, we need to record the current roundid on
-                // the button itself.
-                button.prop('data-roundid', round.roundid);
-                button.on('click', function(event) {
-                  handle_new_round_chosen($(this).prop('data-roundid'));
-                });
-                modal.append(button);
-
-                var flipswitch_div = $('<div class="flipswitch-div"></div>');
-                var label = $('<label for="roundid_' + round.roundid + '"' 
-                              + ' class="grand-final-label"'
-                              + '></label>');
-                label.text(round.classname);
-                flipswitch_div.append(label);
-                // Writing just the checkbox and then triggering the "create"
-                // event seems to work the first time, but subsequent
-                // appearances of the modal don't show the jquery-mobile
-                // embellishments.
-                flipswitch_div.append('<div class="ui-flipswitch ui-shadow-inset' 
-                                          + ' ui-bar-inherit ui-flipswitch-active ui-corner-all' 
-                                          + ' grand-final-flipswitch">'
-                                          + '<a href="#" class="ui-flipswitch-on ui-btn' 
-                                          + ' ui-shadow ui-btn-inherit">On</a>'
-                                          + '<span class="ui-flipswitch-off">Off</span>'
-                                          + '<input type="checkbox"'
-                                          + ' data-role="flipswitch"'
-                                          + ' id="roundid_' + round.roundid + '"' 
-                                          + ' name="roundid_' + round.roundid + '"' 
-                                          + ' data-enhanced="true"'
-                                          + ' class="ui-flipswitch-input"'
-                                          + ' checked="checked"/>'
-                                      + '</div>');
-                multi_flipswitches.append(flipswitch_div);
-                completed_rounds.splice(i, 1);
-            } else {
-                ++i;
-            }
-        }
-    }
-    if (add_grand_finals) {
-        modal.append('<h3>Grand Finals</h3>');
-        var button = $('<input type="button" data-enhanced="true" value="Grand Finals"/>');
-        button.on('click', function(event) { handle_grand_final_chosen(); });
+  var add_aggregate = completed_rounds.length > 1;
+  var modal = $("#choose_new_round_modal");
+  modal.empty();
+  var multi_flipswitches = $("#multi_flipswitches");
+  multi_flipswitches.empty();
+  while (completed_rounds.length > 0) {
+    var roundno = completed_rounds[0].round;
+    modal.append('<h3>Add Round ' + (roundno + 1) + '</h3>');
+    var i = 0;
+    while (i < completed_rounds.length) {
+      if (completed_rounds[i].round == roundno) {
+        var round = completed_rounds[i];
+        var button = $('<input type="button" data-enhanced="true"/>');
+        button.prop('value', round.classname);
+        // Although syntactically it looks like a new round variable is created
+        // each time through the loop, it's actually just one variable that's
+        // reused/assigned each time.  Capturing that reused variable in the on-click
+        // function won't work, so, we need to record the current roundid on
+        // the button itself.
+        button.prop('data-roundid', round.roundid);
+        button.on('click', function(event) {
+          handle_new_round_chosen($(this).prop('data-roundid'));
+        });
         modal.append(button);
-        // Even though we're doing the embellishment explicitly, the create
-        // trigger is still needed to make the flipswitches actually do
-        // anything.
-        multi_flipswitches.trigger("create");
+
+        var flipswitch_div = $('<div class="flipswitch-div"></div>');
+        var label = $('<label for="roundid_' + round.roundid + '"'
+                      + ' class="aggregate-label"'
+                      + '></label>');
+        label.text(round.classname);
+        flipswitch_div.append(label);
+        flipswitch_div.append(wrap_flipswitch($('<input type="checkbox"'
+                                                + ' id="roundid_' + round.roundid + '"'
+                                                + ' name="roundid_' + round.roundid + '"'
+                                                + ' checked="checked"/>')));
+        multi_flipswitches.append(flipswitch_div);
+        completed_rounds.splice(i, 1);
+      } else {
+        ++i;
+      }
     }
-    modal.append('<h3>&nbsp;</h3>');
-    modal.append('<input type="button" data-enhanced="true" value="Cancel"'
-                 + ' onclick=\'close_modal("#choose_new_round_modal");\'/>');
+  }
+  if (add_aggregate) {
+    modal.append('<h3>Add Aggregate Round</h3>');
+    var button = $('<input type="button" data-enhanced="true" value="Aggregate Round"/>');
+    button.on('click', function(event) { handle_aggregate_chosen(); });
+    modal.append(button);
+    // Even though we're doing the embellishment explicitly, the create
+    // trigger is still needed to make the flipswitches actually do
+    // anything.
+    multi_flipswitches.trigger("create");
+  }
+  modal.append('<h3>&nbsp;</h3>');
+  modal.append('<input type="button" data-enhanced="true" value="Cancel"'
+               + ' onclick=\'close_modal("#choose_new_round_modal");\'/>');
 }
 
 function offer_new_rounds(rounds) {
@@ -868,17 +867,28 @@ function process_coordinator_poll_response(data) {
 
   offer_new_rounds(rounds);
 
-  if (current.master_schedule && $("#master-schedule-group .control_group").length == 0) {
-    $("#master-schedule-group").empty();
+  if (current.master_schedule) {
     var totals = calculate_totals(rounds);
     totals.roundid = -1;
     totals.classname = "Interleaved Schedule";
     totals.category = "master-schedule";
 
-    generate_scheduling_control_group(totals, current, timer_state);
+    if ($("#master-schedule-group .control_group").length == 0) {
+      $("#master-schedule-group").empty();
+      generate_scheduling_control_group(totals, current, timer_state);
+    } else {
+      inject_into_scheduling_control_group(totals, current, timer_state);
+    }
+    $("#schedule-and-race").addClass('hidden');
+    $("#schedule-only").val("Make Schedule");
   } else if (!current.master_schedule) {
     $("#master-schedule-group").empty();
+    $("#schedule-and-race").removeClass('hidden');
+    $("#schedule-only").val("Schedule Only");
   }
+  // The "Schedule + Race" option from the #schedule_modal shouldn't be offered
+  // if we're in interleaved heats:
+  $("#schedule-and-race").toggleClass('hidden', current.master_schedule);
 
   var layout = {'now-racing': [],
                 'ready-to-race': [],
@@ -911,7 +921,11 @@ function process_coordinator_poll_response(data) {
   } else {
     g_rounds_layout = layout;
     $(".scheduling_control_group").empty();
+    g_aggregate_rounds = [];
     $.each(rounds, function (index, round) {
+      if (round.aggregate) {
+        g_aggregate_rounds.push(round.roundid);
+      }
       generate_scheduling_control_group(round, current, timer_state);
     });
   }

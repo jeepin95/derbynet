@@ -45,7 +45,16 @@ array(
 
 "CREATE TABLE `Classes` ("
 ."  `classid` INTEGER PRIMARY KEY, "
-."  `class` VARCHAR(15) NOT NULL UNIQUE"
+."  `class` VARCHAR(15) NOT NULL UNIQUE COLLATE NOCASE"
+.(expected_schema_version() < 3 ? "" :
+  // For aggregate classes, constituents is a comma-separated list of classids, and
+  // durable is true if the aggregate class was created explicitly by the user, otherwise
+  // false if created while creating an aggregate round.
+  (",  `constituents` VARCHAR(100) DEFAULT ''"
+   .", `durable` INTEGER"
+  // ntrophies is the number of trophies to award for this class, or -1 to use
+  // the standard value from settings.
+   .", `ntrophies` INTEGER DEFAULT -1"))
 .(expected_schema_version() < 2 ? "" : ",  `sortorder` INTEGER")
 .")",
 
@@ -91,7 +100,7 @@ make_index("RaceInfo", "itemkey"),
 
 "CREATE TABLE `Ranks` ("
 ."  `rankid` INTEGER PRIMARY KEY, "
-."  `rank` VARCHAR(15) NOT NULL, "
+."  `rank` VARCHAR(15) NOT NULL COLLATE NOCASE, "
 ."  `classid` INTEGER NOT NULL"
 .(expected_schema_version() < 2 ? "" : ",  `sortorder` INTEGER ")
 .")",
@@ -104,8 +113,8 @@ make_index("Ranks", "rank"),
 ."  `racerid` INTEGER PRIMARY KEY, "
 ."  `carnumber` INTEGER NOT NULL, "
 ."  `carname` VARCHAR(20), "
-."  `lastname` VARCHAR(20) NOT NULL, "
-."  `firstname` VARCHAR(15) NOT NULL, "
+."  `lastname` VARCHAR(20) NOT NULL COLLATE NOCASE, "
+."  `firstname` VARCHAR(15) NOT NULL COLLATE NOCASE, "
 ."  `classid` INTEGER NOT NULL, "
 ."  `rankid` INTEGER NOT NULL, "
 ."  `passedinspection` TINYINT(1) DEFAULT 0, "

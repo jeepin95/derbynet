@@ -7,6 +7,7 @@ import org.jeffpiazza.derby.gui.TimerGui;
 import javax.swing.*;
 import org.jeffpiazza.derby.devices.AllDeviceTypes;
 import org.jeffpiazza.derby.devices.FastTrackDevice;
+import org.jeffpiazza.derby.devices.MicroWizard;
 import org.jeffpiazza.derby.devices.NewBoldDevice;
 import org.jeffpiazza.derby.devices.SimulatedDevice;
 import org.jeffpiazza.derby.devices.SmartLineDevice;
@@ -38,6 +39,8 @@ public class TimerMain {
         "   -n <port name>: Use specified port name instead of searching");
     System.err.println(
         "   -min-gate-time <milliseconds>: Ignore gate transitions shorter than <milliseconds>");
+    System.err.println(
+        "  -ignore-place: Discard any place indications from timer");
     System.err.println(
         "   -d <device name>: Use specified device instead of trying to identify");
     System.err.println("      Known devices:");
@@ -140,6 +143,9 @@ public class TimerMain {
       } else if (arg.equals("-d") && has_value) {
         devicename = args[consumed_args + 1];
         consumed_args += 2;
+      } else if (arg.equals("-ignore-place")) {
+        Message.Finished.ignorePlaceData();
+        ++consumed_args;
       } else if (arg.equals("-simulate-timer")) {
         simulateTimer = true;
         ++consumed_args;
@@ -161,14 +167,17 @@ public class TimerMain {
       } else if (arg.equals("-reset-on-race-over")) {
         TheJudgeDevice.setResetOnRaceOver(true);
         ++consumed_args;
-      } else if (arg.equals("-delay-reset-after-race") ||
-                 arg.equals("-reset-delay-on-race-over")) {
+      } else if (arg.equals("-delay-reset-after-race")
+          || arg.equals("-reset-delay-on-race-over")) {
         long millis = 1000 * Integer.parseInt(args[consumed_args + 1]);
         NewBoldDevice.setPostRaceDisplayDurationMillis(millis);
         TimerDeviceCommon.setPostRaceDisplayDurationMillis(millis);
         consumed_args += 2;
       } else if (arg.equals("-skip-enhanced-format")) {
-        FastTrackDevice.attempt_enhanced_format = false;
+        FastTrackDevice.attemptEnhancedFormat = false;
+        ++consumed_args;
+      } else if (arg.equals("-skip-read-features")) {
+        MicroWizard.attemptReadFeatures = false;
         ++consumed_args;
       } else if (arg.equals("-min-gate-time") && has_value) {
         TimerDeviceCommon.setMinimumGateTimeMillis(
@@ -218,9 +227,9 @@ public class TimerMain {
     try {
       TimerGui timerGui = null;
       if (showGui) {
-        timerGui = startTimerGui(traceMessages, traceHeartbeats,
-                                 connector, base_url,
-                                 username, password, simulatedSession);
+        timerGui = startTimerGui(connector, base_url,
+                                 username, password, simulatedSession,
+                                 traceMessages, traceHeartbeats, logwriter);
       } else {
         final ClientSession clientSession
             = simulatedSession == null ? new ClientSession(base_url)
@@ -258,13 +267,15 @@ public class TimerMain {
     }
   }
 
-  private static TimerGui startTimerGui(HttpTask.MessageTracer traceMessages,
-                                        HttpTask.MessageTracer traceHeartbeats,
-                                        ConnectorImpl connector, String base_url,
+  private static TimerGui startTimerGui(ConnectorImpl connector, String base_url,
                                         String username, String password,
-                                        ClientSession simulatedSession) {
-    final TimerGui timerGui = new TimerGui(traceMessages, traceHeartbeats,
-                                           connector);
+                                        ClientSession simulatedSession,
+                                        HttpTask.MessageTracer traceMessages,
+                                        HttpTask.MessageTracer traceHeartbeats,
+                                        LogWriter logwriter) {
+    final TimerGui timerGui = new TimerGui(connector, traceMessages,
+                                           traceHeartbeats,
+                                           logwriter);
     SwingUtilities.invokeLater(new Runnable() {
       public void run() {
         timerGui.show();

@@ -15,6 +15,7 @@ require_permission(PRESENT_AWARDS_PERMISSION);
 <?php require('inc/stylesheet.inc'); ?>
 <link rel="stylesheet" type="text/css" href="css/jquery.mobile-1.4.2.css"/>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/jquery-ui-1.10.4.min.js"></script>
 <link rel="stylesheet" type="text/css" href="css/kiosk-dashboard.css"/>
 <script type="text/javascript" src="js/mobile-init.js"></script>
@@ -30,13 +31,16 @@ require_permission(PRESENT_AWARDS_PERMISSION);
 <div class="standings-control hidden control_group block_buttons">
   <div class="round-select">
     <h3>Display standings for:</h3>
-    <select>
+    <select id='standings-catalog'>
       <?php
         // This <select> elements lets the operator choose what standings should be displayed on
         // kiosks displaying standings.
-        $current = read_raceinfo('standings-message', '');
-        list($current_roundid, $current_rankid, $current_exposed) =
-            array_pad(explode('-', $current), 3, '');
+        $standings_state =  explode('-', read_raceinfo('standings-message'), 2);
+        $current_exposed = $current_catalog_entry = '';
+        if (count($standings_state) >= 2) {
+          $current_exposed = $standings_state[0];
+          $current_catalog_entry = $standings_state[1];
+        }
 
         if ($current_exposed === '') {
           $current_exposed = 'all';
@@ -46,32 +50,26 @@ require_permission(PRESENT_AWARDS_PERMISSION);
 
         $use_subgroups = read_raceinfo_boolean('use-subgroups');
 
-        $sel = ' selected="selected"';
-        if ($current == '') {
-          echo '<option '.$sel.' disabled="1">Please choose what standings to display</option>';
+        if ($current_catalog_entry == '') {
+          echo '<option selected="selected" disabled="1">Please choose what standings to display</option>';
         }
-        echo '<option data-roundid=""'.(($current != '' && $current_roundid == '') ? $sel : '').'>'
-             .supergroup_label()
-             .'</option>';
-        foreach (rounds_for_standings() as $round) {
-          echo '<option data-roundid="'.$round['roundid'].'" data-rankid=""'
-               .($current_roundid == $round['roundid'] && $current_rankid == '' ? $sel : '').'>'
-               .htmlspecialchars($round['name'], ENT_QUOTES, 'UTF-8')
-               .'</option>'."\n";
-          if ($use_subgroups) {
-            foreach ($round['ranks'] as $rank) {
-              echo '<option data-roundid="'.$round['roundid'].'" data-rankid="'.$rank['rankid'].'"'
-              .($current_roundid == $round['roundid'] && $current_rankid == $rank['rankid'] ? $sel : '').'>';
-              echo htmlspecialchars($round['name'].' / '.$rank['name'], ENT_QUOTES, 'UTF-8');
-              echo "</option>\n";
-            }
-          }
+    {
+      foreach (standings_catalog() as $entry) {
+        $json_entry = json_encode($entry);
+        echo '<option data-catalog-entry="'.htmlspecialchars($json_entry, ENT_QUOTES, 'UTF-8').'"';
+        if ($current_catalog_entry == $json_entry) {
+          echo ' selected="selected"';
         }
+        echo '>';
+        echo htmlspecialchars($entry['name'], ENT_QUOTES, 'UTF-8');
+        echo "</option>\n";
+      }
+    }
       ?>
     </select>
   </div>
   <div class="reveal block_buttons">
-        <h3 <?php if ($current == '') { echo "class='hidden'"; } ?>>Revealing <span id="current_exposed"><?php echo $current_exposed; ?></span> standing(s).</h3>
+        <h3 <?php if ($standings_state == '') { echo "class='hidden'"; } ?>>Revealing <span id="current_exposed"><?php echo $current_exposed; ?></span> standing(s).</h3>
     <input type="button" data-enhanced="true" value="Reveal One" onclick="handle_reveal1()"/><br/>
     <input type="button" data-enhanced="true" value="Reveal All" onclick="handle_reveal_all()"/><br/>
   </div>

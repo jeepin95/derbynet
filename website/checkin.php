@@ -5,6 +5,9 @@ require_once('inc/banner.inc');
 require_once('inc/authorize.inc');
 require_once('inc/schema_version.inc');
 require_once('inc/photo-config.inc');
+require_once('inc/classes.inc');
+require_once('inc/checkin-table.inc');
+
 require_permission(CHECK_IN_RACERS_PERMISSION);
 
 // This is the racer check-in page.  It appears as a table of all the
@@ -34,8 +37,8 @@ $use_subgroups = read_raceinfo_boolean('use-subgroups');
 // check-in form.  For groups that don't do this, $xbs will be false
 // (and $xbs_award_name will be blank), and the checkboxes won't be
 // shown.
-$xbs = read_raceinfo_boolean('xbs-award');
-$xbs_award_name = read_raceinfo('xbs-award');
+$xbs = read_raceinfo_boolean('use-xbs');
+$xbs_award_name = read_raceinfo('xbs-award', 'Exclusively By Scout');
 
 $order = '';
 if (isset($_GET['order']))
@@ -49,17 +52,14 @@ if (!$order)
 // column for ordering currently in use is NOT a link (because it wouldn't do
 // anything).
 function column_header($text, $o) {
-    global $order;
-
-    if ($o == $order)
-        return '<b>'.$text.'</b>';
-    return '<a href="?order='.$o.'">'.$text.'</a>';
+  global $order;
+  return "<a data-order='".$o."' "
+      .($o == $order ? "" : " href='#'").">".$text."</a>";
 }
 ?><!DOCTYPE html>
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-<meta http-equiv="refresh" content="300"/>
 <title>Check-In</title>
 <link rel="stylesheet" type="text/css" href="css/dropzone.min.css"/>
 <link rel="stylesheet" type="text/css" href="css/jquery.mobile-1.4.2.css"/>
@@ -67,9 +67,10 @@ function column_header($text, $o) {
 <link rel="stylesheet" type="text/css" href="css/main-table.css"/>
 <link rel="stylesheet" type="text/css" href="css/checkin.css"/>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/mobile-init.js"></script>
 <script type="text/javascript">
-g_order = '<?php echo $order; ?>';
+var g_order = '<?php echo $order; ?>';
 </script>
 <script type="text/javascript" src="js/jquery.mobile-1.4.2.min.js"></script>
 <script type="text/javascript" src="js/dashboard-ajax.js"></script>
@@ -81,8 +82,6 @@ g_order = '<?php echo $order; ?>';
 <body>
 <?php
 make_banner('Racer Check-In');
-
-require_once('inc/checkin-table.inc');
 ?>
 
 <div class="block_buttons">
@@ -118,27 +117,32 @@ require_once('inc/checkin-table.inc');
 <tbody>
 <?php
 
-    $sql = 'SELECT racerid, carnumber, lastname, firstname, carname, imagefile,'
+  list($classes, $classseq, $ranks, $rankseq) = classes_and_ranks();
+
+  $sql = 'SELECT racerid, carnumber, lastname, firstname, carname, imagefile,'
       .(schema_version() < 2 ? "" : " carphoto,")
       .(schema_version() < 2 ? "class" : "Classes.sortorder").' AS class_sort,'
+      .(schema_version() < 2 ? "rank" : "Ranks.sortorder").' AS rank_sort,'
       .' RegistrationInfo.classid, class, RegistrationInfo.rankid, rank, passedinspection, exclude,'
       .' EXISTS(SELECT 1 FROM RaceChart WHERE RaceChart.racerid = RegistrationInfo.racerid) AS scheduled,'
       .' EXISTS(SELECT 1 FROM RaceChart WHERE RaceChart.classid = RegistrationInfo.classid) AS denscheduled,'
       .' EXISTS(SELECT 1 FROM Awards WHERE Awards.awardname = \''.addslashes($xbs_award_name).'\' AND'
       .'                                   Awards.racerid = RegistrationInfo.racerid) AS xbs'
-    .' FROM '.inner_join('RegistrationInfo', 'Classes',
-                         'RegistrationInfo.classid = Classes.classid',
-                         'Ranks',
-                         'RegistrationInfo.rankid = Ranks.rankid')
-    .' ORDER BY '
+      .' FROM '.inner_join('RegistrationInfo', 'Classes',
+                           'RegistrationInfo.classid = Classes.classid',
+                           'Ranks',
+                           'RegistrationInfo.rankid = Ranks.rankid')
+      .' ORDER BY '
           .($order == 'car' ? 'carnumber, lastname, firstname' :
-            ($order == 'class'  ? 'class_sort, lastname, firstname' :
+            ($order == 'class'  ? 'class_sort, rank_sort, lastname, firstname' :
              'lastname, firstname'));
 
 $stmt = $db->query($sql);
 
 $n = 1;
 foreach ($stmt as $rs) {
+  // TODO
+  $rs['rankseq'] = $ranks[$rs['rankid']]['seq'];
   checkin_table_row($rs, $xbs, $use_subgroups, $n);
   ++$n;
 }
@@ -186,7 +190,7 @@ foreach ($stmt as $rs) {
            .' FROM Ranks INNER JOIN Classes'
            .' ON Ranks.classid = Classes.classid'
            .' ORDER BY '
-           .(schema_version() >= 2 ? 'Classes.sortorder, ' : '')
+           .(schema_version() >= 2 ? 'Classes.sortorder, Ranks.sortorder, ' : '')
            .'class, rank';
     $stmt = $db->query($sql);
     foreach ($stmt as $rs) {
@@ -266,7 +270,7 @@ foreach ($stmt as $rs) {
         <input type="submit" value="Capture Only" data-enhanced="true"
           onclick='g_check_in = false;'/>
         <input type="button" value="Switch Camera" data-enhanced="true"
-          onclick='switch_camera_modal();'/>
+          onclick='handle_switch_camera();'/>
         <input type="button" value="Cancel" data-enhanced="true"
           onclick='close_photo_modal();'/>
 
@@ -335,12 +339,12 @@ foreach ($stmt as $rs) {
 
 <?php require_once('inc/ajax-pending.inc'); ?>
 <div id="find-racer">
-  <form id="find-racer-form">
+  <div id="find-racer-form">
     Find Racer:
     <input type="text" id="find-racer-text" name="narrowing-text" data-enhanced="true"/>
     <span id="find-racer-message"><span id="find-racer-index" data-index="1">1</span> of <span id="find-racer-count">0</span></span>
     <img onclick="cancel_find_racer()" src="img/cancel-20.png"/>
-  </form>
+  </div>
 </div>
 </body>
 </html>

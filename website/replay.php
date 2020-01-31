@@ -6,32 +6,12 @@ require_once('inc/data.inc');
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
 <title>Replay Recording</title>
-<?php require('inc/stylesheet.inc'); ?>
 <?php
-if (isset($_SERVER['SERVER_NAME'])) {
-  $server = $_SERVER['SERVER_NAME'];
-} else if (isset($_SERVER['SERVER_ADDR'])) {
-  $server = $_SERVER['SERVER_ADDR'];
-} else if (isset($_SERVER['LOCAL_ADDR'])) {
-  $server = $_SERVER['LOCAL_ADDR'];
-} else if (isset($_SERVER['HTTP_HOST'])) {
-  $server = $_SERVER['HTTP_HOST'];
-} else {
-  $addrs = gethostbynamel(gethostname());
-  if (count($addrs) > 0) {
-    $server = $addrs[0];
-  } else {
-    $server = ' unknown server name! ';
-  }
-}
+require('inc/stylesheet.inc');
+require('inc/servername.inc');
 
-if (isset($_SERVER['REQUEST_URI'])) {
-  $path = $_SERVER['REQUEST_URI'];
-} else if (isset($_SERVER['PHP_SELF'])) {
-  $path = $_SERVER['PHP_SELF'];
-} else {
-  $path = $_SERVER['SCRIPT_NAME'];
-}
+$server = server_name();
+$path = request_path();
 
 $url = $server . $path;
 
@@ -42,12 +22,16 @@ if ($last === false) {
 
 // Don't force http !
 $kiosk_url = '//'.substr($url, 0, $last + 1).'kiosk.php';
+if (isset($_REQUEST['address'])) {
+  $kiosk_url .= "?address=".$_REQUEST['address'];
+}
 ?>
 <link rel="stylesheet" type="text/css" href="css/replay.css"/>
 <script type="text/javascript" src="js/jquery.js"></script>
+<script type="text/javascript" src="js/ajax-setup.js"></script>
 <script type="text/javascript" src="js/jquery-ui-1.10.4.min.js"></script>
 <script type="text/javascript" src="js/screenfull.min.js"></script>
-<script type="text/javascript" src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+<script type="text/javascript" src="js/adapter.js"></script>
 <script type="text/javascript" src="js/message-poller.js"></script>
 <script type="text/javascript" src="js/viewer-signaling.js"></script>
 <script type="text/javascript" src="js/video-capture.js"></script>
@@ -78,10 +62,13 @@ var g_remote_poller;
 var g_recorder;
 
 var g_replay_count;
+var g_replay_rate;
 
 function handle_replay_message(cmdline) {
   if (cmdline.startsWith("HELLO")) {
   } else if (cmdline.startsWith("TEST")) {
+    g_replay_count = parseInt(cmdline.split(" ")[2]);
+    g_replay_rate = parseFloat(cmdline.split(" ")[3]);
     on_replay();
   } else if (cmdline.startsWith("START")) {
     g_video_name_root = cmdline.substr(6).trim();
@@ -90,6 +77,7 @@ function handle_replay_message(cmdline) {
     //  skipback and rate are ignored, but showings we can honor
     // (Must be exactly one space between fields:)
     g_replay_count = parseInt(cmdline.split(" ")[2]);
+    g_replay_rate = parseFloat(cmdline.split(" ")[3]);
     on_replay();
   } else if (cmdline.startsWith("CANCEL")) {
   } else {
@@ -100,6 +88,15 @@ function handle_replay_message(cmdline) {
 $(function() { setInterval(poll_as_replay, 250); });
 
 function on_device_selection(selectq) {
+  stream = document.getElementById("preview").srcObject;
+  
+  // If a stream is already open, stop it.
+  if (stream != null) {
+    stream.getTracks().forEach(function(track) {
+      track.stop();
+    });
+  }	
+	
   let device_id = selectq.find(':selected').val();
   navigator.mediaDevices.getUserMedia({ video: { deviceId: device_id } })
   .then(stream => {
@@ -109,7 +106,7 @@ function on_device_selection(selectq) {
 }
 
 $(function() {
-    if (window.MediaRecorder == undefined) {
+    if (typeof(window.MediaRecorder) == 'undefined') {
       $("#replay-setup").empty()
       .append("<h3 id='reject'>This browser does not support MediaRecorder.<br/>" +
               "Please use another browser for replay.</h3>")
@@ -117,9 +114,15 @@ $(function() {
       return;
     }
 
-    if (navigator.mediaDevices == undefined) {
-      // TODO This happens if we're not in a secure context
-      console.log('navigator.mediaDevice is undefined');
+    if (typeof(navigator.mediaDevices) == 'undefined') {
+      // This happens if we're not in a secure context
+      var setup = $("#replay-setup").empty()
+                .append("<h3 id='reject'>Access to cameras is blocked.</h3>");
+      if (window.location.protocol == 'http:') {
+        var https_url = "https://" + window.location.hostname + window.location.pathname;
+        setup.append("<p>You may need to switch to <a href='" +  https_url + "'>" + https_url + "</a></p>");
+      }
+      return;
     } else {
       navigator.mediaDevices.ondevicechange = function(event) {
         video_devices($("#device-picker :selected").prop('value'),
@@ -162,6 +165,8 @@ $(function() {
             $("#playback-background").hide('slide');
             announce_to_interior('replay-ended');
           } else {
+            console.log('Replay rate of ' + g_replay_rate);
+            document.querySelector("#playback").playbackRate = g_replay_rate;
             document.querySelector("#playback").play();
           }
         });
@@ -196,8 +201,9 @@ function on_replay() {
         }
 
         document.querySelector("#playback").src = URL.createObjectURL(blob);
-        g_replay_count = 2;        // Play back twice
         $("#playback-background").show('slide');
+        console.log('Replay rate of ' + g_replay_rate);
+        document.querySelector("#playback").playbackRate = g_replay_rate;
         document.querySelector("#playback").play();
       } else {
         console.log("No blob!");

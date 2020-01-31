@@ -19,6 +19,9 @@
   <!-- The content of the .win.zip is staged here, zipped, and then
        deleted. -->
   <property name="uniserver-target" location="dist/uniserver"/>
+  <!-- Contains a recent copy of
+        https://webrtc.github.io/adapter/adapter-latest.js -->
+  <property name="webrtc-adapter-cache" location="adapter-webrtc"/>
 
   <condition property="is_mac">
     <os family="mac"/>
@@ -41,7 +44,7 @@
     <ant dir="${docs-dir}"  target="clean"/>
   </target>
   
-  <target name="dist" depends="dist.zip, dist.oneclick, dist.mac, dist.debian"
+  <target name="dist" depends="dist.oneclick, dist.mac, dist.debian"
           description="Build complete distribution"/>
 
   <target name="dist.zip" depends="timer-jar, docs-dist, generated"
@@ -79,8 +82,16 @@
 
   <target name="generated" depends="banner, generated-version.inc,
                     generated-build-date.inc,
-                    release-series, generated-commit-hash.inc"
+                    release-series, generated-commit-hash.inc, quickref, webrtc-adapter"
           description="Build generated files">
+  </target>
+
+  <target name="webrtc-adapter">
+      <mkdir dir="${webrtc-adapter-cache}"/>
+      <get src="https://webrtc.github.io/adapter/adapter-latest.js"
+           dest="${webrtc-adapter-cache}" ignoreerrors="true"/>
+      <copy file="${webrtc-adapter-cache}/adapter-latest.js"
+            tofile="website/js/adapter.js" overwrite="true"/>
   </target>
 
   <target name="generated-version.inc">
@@ -151,8 +162,7 @@
           <propertyresource name="git-branch"/>
           <filterchain>
               <striplinebreaks/>
-              <replaceregex pattern="^v" replace="Version "/>
-              <replaceregex pattern="master" replace="Development"/>
+              <replaceregex pattern="master" replace="dev"/>
           </filterchain>
       </loadresource>
       <copy file="templates/banner.inc" tofile="website/inc/banner.inc" overwrite="true">
@@ -162,6 +172,10 @@
               </replacetokens>
           </filterchain>
       </copy>
+  </target>
+
+  <target name="quickref" depends="docs-dist">
+      <copy file="docs/dist/Quick Reference.pdf" tofile="website/quickref.pdf" overwrite="true"/>
   </target>
 
   <target name="timer-jar" depends="generated"
@@ -397,9 +411,13 @@
                  generated-version.inc,
                  generated-build-date.inc,
                  release-series, generated-commit-hash.inc">
+    <mkdir dir="RESOURCES"/>
+    <copy file="installer/mac/README.html" todir="RESOURCES"/>
     <exec executable="/usr/bin/productbuild">
         <arg value="--distribution"/>
         <arg value="installer/mac/Distribution.xml"/>
+        <arg value="--resources"/>
+        <arg value="RESOURCES"/>
         <arg value="../DerbyNet-${release-series}-${git-rev-count}${git-dirty}-${DSTAMP}.pkg"/>
     </exec>
     <delete file="derbynet.docs.pkg"/>
@@ -407,6 +425,7 @@
     <delete file="derbynet.replay.pkg"/>
     <delete file="derbynet.timer.pkg"/>
     <delete file="derbynet.website.pkg"/>
+    <delete dir="RESOURCES"/>
 </target>
 
 <target name="unpack-uniserver" if="is_windows"

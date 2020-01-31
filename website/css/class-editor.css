@@ -52,6 +52,37 @@ z-index: 2;
     text-align: center;
 }
 
+#constituent_extension p,
+#constituent_extension p span {
+  font-size: medium;
+}
+#constituent_extension p span {
+  font-weight: bold;
+}
+
 #delete_button_extension {
     padding-top: 40px;
+}
+
+#aggregate-constituents .ui-flipswitch {
+  margin-left: auto;
+  margin-right: auto;
+  padding: 5px;
+  width: 6.875em;
+}
+#aggregate-constituents .ui-flipswitch span {
+  font-size: 16px;
+}
+
+#aggregate-constituents .ui-flipswitch.ui-flipswitch-active {
+    padding-left: 5em;
+    width: 1.875em;
+}
+
+#aggregate-constituents label {
+    display: inline-block;
+    width: 300px;
+    margin-right: 1em;
+    text-align: right;
+    font-weight: bold;
 }

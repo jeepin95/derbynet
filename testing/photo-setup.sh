@@ -36,13 +36,14 @@ if [ `echo "$BASE_URL" | grep -i localhost` ]; then
     chmod 777 "$CAR_PHOTO_DIR"
     cp `dirname $0`/data/carphotos/Car* "$CAR_PHOTO_DIR"
 
-    VIDEO_DIR=`mktemp -d /tmp/videosXXXXXXXX`
+    VIDEO_DIR=`mktemp -d /tmp/videos.XXXXXXXX`
     chmod 777 "$VIDEO_DIR"
 
     user_login_coordinator
 
     curl_post action.php "action=settings.write&photo-dir=$PHOTO_DIR" | check_success
     curl_post action.php "action=settings.write&car-photo-dir=$CAR_PHOTO_DIR" | check_success
+    curl_post action.php "action=settings.write&video-dir=$VIDEO_DIR" | check_success
     curl_post action.php "action=settings.write&photos-on-now-racing=head" | check_success
 else
     # For the remote case, assume that directories have been set up, and upload each photo
@@ -65,3 +66,13 @@ else
 
     echo Done
 fi
+
+# Delete a photo, then upload it again
+curl_photo_any head/file/original/Cub-3126.jpg/xyz
+curl_post action.php "action=photo.delete&repo=head&photo=Cub-3126.jpg" | check_success
+
+COUNT=`curl --location -s -b $COOKIES_CURL -c $COOKIES_CURL $BASE_URL/photo.php/head/file/original/Cub-3126.jpg/xyz | wc -c`
+if [ $COUNT -gt 1000 ]; then
+    test_fails Photo not deleted
+fi
+upload_headshot `dirname $0`/data/headshots/Cub-3126.jpg
